@@ -103,6 +103,36 @@ export async function listUsers() {
   return readCollection('users');
 }
 
+export const TIERS = ['free', 'basic', 'premium', 'sultan'];
+
+export function normalizeTier(tier) {
+  const t = String(tier || 'free').toLowerCase();
+  return TIERS.includes(t) ? t : 'free';
+}
+
+export function currentMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function applyUserDefaults(user) {
+  if (!user.tier) user.tier = 'free';
+  user.tier = normalizeTier(user.tier);
+  if (typeof user.text_quota_used !== 'number') user.text_quota_used = 0;
+  if (typeof user.media_quota_used !== 'number') user.media_quota_used = 0;
+  if (!user.last_media_reset_daily) user.last_media_reset_daily = todayKey();
+  if (!user.quota_reset_date) user.quota_reset_date = `${currentMonthKey()}-01`;
+  if (user.sultan_bot_limit === undefined || user.sultan_bot_limit === null) user.sultan_bot_limit = 1;
+  if (!Array.isArray(user.active_bot_instances)) user.active_bot_instances = [];
+  if (user.tier_expired_at === undefined) user.tier_expired_at = null;
+  return user;
+}
+
 export async function upsertUser(phone, name = phone) {
   const { user, isNew } = await withCollection('users', (users) => {
     let found = users.find((u) => u.phone === phone);
@@ -112,16 +142,133 @@ export async function upsertUser(phone, name = phone) {
         name: name || phone,
         created_at: new Date().toISOString(),
         timezone: getTimezone(),
+        tier: 'free',
+        text_quota_used: 0,
+        media_quota_used: 0,
+        last_media_reset_daily: todayKey(),
+        quota_reset_date: `${currentMonthKey()}-01`,
+        tier_expired_at: null,
+        sultan_bot_limit: 1,
+        active_bot_instances: [],
       };
       users.push(found);
       return { user: found, isNew: true };
     }
     if (name && name !== phone) found.name = name;
+    applyUserDefaults(found);
     return { user: found, isNew: false };
   });
 
   if (isNew) await ensureDefaultWallets(phone);
-  return user;
+  return applyUserDefaults(user);
+}
+
+export async function setUserTier(phone, tier, expiredAt = null) {
+  return withCollection('users', (users) => {
+    const found = users.find((u) => u.phone === phone);
+    if (!found) throw new Error('User tidak ditemukan');
+    applyUserDefaults(found);
+    found.tier = normalizeTier(tier);
+    found.tier_expired_at = expiredAt;
+    found.updated_at = new Date().toISOString();
+    return found;
+  });
+}
+
+function getBackupDir() {
+  return path.resolve(process.env.BACKUP_DIR || './backups');
+}
+
+export async function restoreUserBackup(phone, payload = {}, mode = 'replace') {
+  const targetPhone = phone || payload?.user?.phone;
+  if (!targetPhone) throw new Error('Phone target tidak ditemukan');
+
+  // safety backup
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = path.join(getBackupDir(), `pre_restore_${targetPhone}_${stamp}.json`);
+  await fs.mkdir(getBackupDir(), { recursive: true });
+  const current = {
+    meta: { phone: targetPhone, exported_at: new Date().toISOString(), type: 'pre_restore' },
+    user: await getUser(targetPhone),
+    transactions: await listTransactions(targetPhone),
+    wallets: await getWallets(targetPhone),
+    budgets: await getBudgets(targetPhone),
+  };
+  await fs.writeFile(backupPath, JSON.stringify(current, null, 2), 'utf8');
+
+  const incomingTx = Array.isArray(payload.transactions) ? payload.transactions : [];
+  const incomingWallets = Array.isArray(payload.wallets) ? payload.wallets : [];
+  const incomingBudgets = Array.isArray(payload.budgets) ? payload.budgets : [];
+
+  if (mode === 'replace') {
+    await withCollection('transactions', (list) => {
+      for (let i = list.length - 1; i >= 0; i--) if (list[i].user_phone === targetPhone) list.splice(i, 1);
+      for (const t of incomingTx) list.push({ ...t, user_phone: targetPhone });
+    });
+    await withCollection('wallets', (list) => {
+      for (let i = list.length - 1; i >= 0; i--) if (list[i].user_phone === targetPhone) list.splice(i, 1);
+      for (const w of incomingWallets) list.push({ ...w, user_phone: targetPhone });
+    });
+    await withCollection('budgets', (list) => {
+      for (let i = list.length - 1; i >= 0; i--) if (list[i].user_phone === targetPhone) list.splice(i, 1);
+      for (const b of incomingBudgets) list.push({ ...b, user_phone: targetPhone });
+    });
+  } else {
+    // merge
+    await withCollection('transactions', (list) => {
+      const ids = new Set(list.filter((t) => t.user_phone === targetPhone).map((t) => t.id));
+      for (const t of incomingTx) {
+        if (t.id && ids.has(t.id)) continue;
+        list.push({ ...t, user_phone: targetPhone });
+        if (t.id) ids.add(t.id);
+      }
+    });
+    await withCollection('wallets', (list) => {
+      const names = new Set(list.filter((w) => w.user_phone === targetPhone).map((w) => w.name));
+      for (const w of incomingWallets) {
+        if (names.has(w.name)) continue;
+        list.push({ ...w, user_phone: targetPhone });
+        names.add(w.name);
+      }
+    });
+    await withCollection('budgets', (list) => {
+      const keys = new Set(list.filter((b) => b.user_phone === targetPhone).map((b) => b.category));
+      for (const b of incomingBudgets) {
+        if (keys.has(b.category)) continue;
+        list.push({ ...b, user_phone: targetPhone });
+        keys.add(b.category);
+      }
+    });
+  }
+
+  if (payload.user && typeof payload.user === 'object') {
+    await updateUserFields(targetPhone, {
+      name: payload.user.name,
+      tier: payload.user.tier,
+      tier_expired_at: payload.user.tier_expired_at,
+      text_quota_used: payload.user.text_quota_used,
+      media_quota_used: payload.user.media_quota_used,
+      sultan_bot_limit: payload.user.sultan_bot_limit,
+    });
+  }
+
+  return { phone: targetPhone, mode, restored: incomingTx.length, backupPath };
+}
+
+export async function updateUserFields(phone, fields = {}) {
+  return withCollection('users', (users) => {
+    const found = users.find((u) => u.phone === phone);
+    if (!found) throw new Error('User tidak ditemukan');
+    applyUserDefaults(found);
+    if (fields.tier !== undefined) found.tier = normalizeTier(fields.tier);
+    if (fields.tier_expired_at !== undefined) found.tier_expired_at = fields.tier_expired_at;
+    if (fields.text_quota_used !== undefined) found.text_quota_used = Number(fields.text_quota_used) || 0;
+    if (fields.media_quota_used !== undefined) found.media_quota_used = Number(fields.media_quota_used) || 0;
+    if (fields.sultan_bot_limit !== undefined) found.sultan_bot_limit = Math.max(0, Number(fields.sultan_bot_limit) || 0);
+    if (fields.name !== undefined) found.name = fields.name;
+    found.updated_at = new Date().toISOString();
+    return found;
+  });
 }
 
 /* TRANSACTIONS */

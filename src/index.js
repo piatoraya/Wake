@@ -39,6 +39,7 @@ import { reportAiFailureToOwner } from './services/owner.js';
 import { normalizePhoneNumber } from './utils/phone.js';
 import { normalizeTimezone, timezoneLabel } from './utils/datetime.js';
 import { sendBackup, pruneOldBackups } from './services/backup.js';
+import { checkAndConsumeQuota, canUseBackup } from './services/quota.js';
 import { startWebServer } from './web/server.js';
 import { setBotState } from './web/state.js';
 import {
@@ -494,7 +495,7 @@ const HELP_TEXT = (prefix) =>
     `   • ${prefix}analisis — analisis keuangan bulan ini (AI)`,
     `   • ${prefix}analisis 2026-06 — analisis bulan tertentu`,
     `   • ${prefix}backup — pilih format backup (Excel/PDF)`,
-    `   • ${prefix}backup excel/pdf — kirim backup Excel/PDF`,
+    `   • ${prefix}backup excel/pdf/json — kirim backup Excel/PDF/JSON`,
     `   • ${prefix}backup 2026-06 — backup bulan tertentu`,
     `   • ${prefix}saldo — saldo semua wallet`,
     `   • ${prefix}wallet <nama> <saldo_awal> — set saldo awal`,
@@ -642,14 +643,20 @@ async function handleCommand(prefix, rawText, ctx) {
     case 'pdf': {
       const monthToken = args.find((a) => /^\d{4}-\d{2}$/.test(a));
       const month = monthToken || null;
-      const formatToken = args.map((a) => a.toLowerCase()).find((a) => ['pdf', 'excel', 'xlsx', 'xls'].includes(a));
-      const format = formatToken === 'pdf' ? 'pdf' : formatToken ? 'xlsx' : null;
+      const formatToken = args.map((a) => a.toLowerCase()).find((a) => ['pdf', 'json', 'excel', 'xlsx', 'xls'].includes(a));
+      const format = formatToken === 'pdf' ? 'pdf' : formatToken === 'json' ? 'json' : formatToken ? 'xlsx' : null;
+
+      const bu = await getUser(phone);
+      if (!canUseBackup(bu)) {
+        await reply('❌ Backup data hanya tersedia untuk tier Premium & Sultan. Upgrade dulu ya.');
+        return true;
+      }
 
       if (!format) {
         pendingStates.set(jid, { state: 'await_backup_format', data: { month }, expiresAt: Date.now() + PENDING_TTL_MS });
         await reply(
           `📦 Mau backup format apa?\n` +
-            `Balas *EXCEL* atau *PDF*` +
+            `Balas *EXCEL*, *PDF*, atau *JSON*` +
             (month ? ` (periode ${formatMonthLabel(month)})` : ' (semua data)') +
             `.\nAtau ketik langsung: *${prefix}backup excel* / *${prefix}backup pdf*.`,
         );
@@ -660,6 +667,59 @@ async function handleCommand(prefix, rawText, ctx) {
         `⏳ Menyiapkan backup ${format.toUpperCase()}${month ? ` periode ${formatMonthLabel(month)}` : ' (semua data)'}...`,
       );
       await sendBackup(sock, jid, phone, { month, format, quoted: msg });
+      return true;
+    }
+
+    /* ------------------------------------------------------------- setlevel */
+    case 'setlevel': {
+      if (phone !== (normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER)) {
+        await reply('❌ Hanya owner yang boleh mengubah level.');
+        return true;
+      }
+      const targetPhone = normalizePhoneNumber(args[0] || '');
+      const tier = (args[1] || '').toLowerCase();
+      const days = Number(args[2]) || 30;
+      if (!targetPhone || !['free', 'basic', 'premium', 'sultan'].includes(tier)) {
+        await reply('❌ Format: `!setlevel <nomor> <free|basic|premium|sultan> [hari]`');
+        return true;
+      }
+      const expiredAt = tier === 'free' ? null : new Date(Date.now() + days * 86400000).toISOString();
+      await setUserTier(targetPhone, tier, expiredAt);
+      await reply(`✅ Level ${targetPhone} diubah ke *${tier}*${expiredAt ? ` (expired ${expiredAt.slice(0, 10)})` : ''}.`);
+      return true;
+    }
+
+    /* ---------------------------------------------------------- setbotlimit */
+    case 'setbotlimit': {
+      if (phone !== (normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER)) {
+        await reply('❌ Hanya owner yang boleh mengubah limit bot.');
+        return true;
+      }
+      const targetPhone = normalizePhoneNumber(args[0] || '');
+      const limit = Number(args[1]);
+      if (!targetPhone || !Number.isFinite(limit) || limit < 0) {
+        await reply('❌ Format: `!setbotlimit <nomor> <limit>`');
+        return true;
+      }
+      await updateUserFields(targetPhone, { sultan_bot_limit: limit });
+      await reply(`✅ Limit bot ${targetPhone} diubah ke *${limit}*.`);
+      return true;
+    }
+
+    /* --------------------------------------------------------------- quota */
+    case 'quota': {
+      const u = await getUser(phone);
+      if (!u) { await reply('❌ User tidak ditemukan.'); return true; }
+      await reply(
+        [
+          '📊 *KUOTA ANDA*',
+          `Tier: *${u.tier}*${u.tier_expired_at ? ` (expired ${u.tier_expired_at.slice(0, 10)})` : ''}`,
+          `Teks terpakai: ${u.text_quota_used}${u.tier === 'free' ? '/50' : u.tier === 'basic' ? ' (gabungan max 100)' : ''}`,
+          `Media terpakai: ${u.media_quota_used}${u.tier === 'premium' ? '/100 (bulan)' : u.tier === 'basic' ? ' (max 1/hari)' : ''}`,
+          `Limit bot Sultan: ${u.sultan_bot_limit}`,
+          `Instance aktif: ${u.active_bot_instances.length}`,
+        ].join('\\n'),
+      );
       return true;
     }
 
@@ -940,6 +1000,11 @@ async function handleAiResult(ai, ctx) {
 
     /* ------------------------------------------------------- get_backup -- */
     case 'get_backup': {
+      const bu = await getUser(phone);
+      if (!canUseBackup(bu)) {
+        await reply('❌ Backup data hanya tersedia untuk tier Premium & Sultan.');
+        return;
+      }
       pendingStates.set(jid, { state: 'await_backup_format', data: { month: null }, expiresAt: Date.now() + PENDING_TTL_MS });
       await reply(
         `📦 Mau backup format apa?\nBalas *EXCEL* atau *PDF* (semua data).\n` +
@@ -1222,10 +1287,11 @@ async function processIncomingMessage(msg) {
       const t = textContent.toLowerCase();
       let format = null;
       if (/\bpdf\b/.test(t)) format = 'pdf';
+      else if (/\bjson\b/.test(t)) format = 'json';
       else if (/\b(excel|xlsx|xls)\b/.test(t)) format = 'xlsx';
       if (!format) {
         pendingStates.set(jid, { state: 'await_backup_format', data: pending.data, expiresAt: Date.now() + PENDING_TTL_MS });
-        await reply('❌ Pilihan tidak dikenali. Balas *EXCEL* atau *PDF*.');
+        await reply('❌ Pilihan tidak dikenali. Balas *EXCEL*, *PDF*, atau *JSON*.');
         return;
       }
       const month = pending.data?.month ?? null;
@@ -1247,6 +1313,8 @@ async function processIncomingMessage(msg) {
   // ==== 2. Voice note -> Gemini (audio -> transkripsi + ekstraksi) ====
   const audioMessage = msg.message?.audioMessage;
   if (audioMessage) {
+    const q = await checkAndConsumeQuota(effectivePhone, 'media');
+    if (!q.allowed) { await reply(q.reason); return; }
     await sock.sendPresenceUpdate('composing', jid).catch(() => {});
     try {
       const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage });
@@ -1274,6 +1342,8 @@ async function processIncomingMessage(msg) {
   // ==== 3. Foto struk -> Gemini (baca struk belanja) ====
   const imageMessage = msg.message?.imageMessage;
   if (imageMessage) {
+    const q = await checkAndConsumeQuota(effectivePhone, 'media');
+    if (!q.allowed) { await reply(q.reason); return; }
     await sock.sendPresenceUpdate('composing', jid).catch(() => {});
     try {
       const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage });
@@ -1301,6 +1371,9 @@ async function processIncomingMessage(msg) {
 
   // ==== 4. Teks bebas -> Gemini (parsing intent + data) ====
   if (!textContent) return; // tipe pesan lain (gambar, stiker, dll) diabaikan
+
+  const tq = await checkAndConsumeQuota(effectivePhone, 'text');
+  if (!tq.allowed) { await reply(tq.reason); return; }
 
   await sock.sendPresenceUpdate('composing', jid).catch(() => {});
   try {

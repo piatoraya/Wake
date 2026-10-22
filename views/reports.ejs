@@ -33,6 +33,30 @@
         <div class="card-header"><h4>Ringkasan Bulanan</h4></div>
         <div class="card-body" id="summaryBody">Pilih bulan lalu klik Tampilkan.</div>
       </div>
+
+      <div class="card mt-3">
+        <div class="card-header"><h4>Restore Backup (Owner only)</h4></div>
+        <div class="card-body">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label">Nomor User</label>
+              <input type="text" id="restorePhone" class="form-control" placeholder="628...">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">File Backup JSON</label>
+              <input type="file" id="restoreFile" class="form-control" accept="application/json">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Mode</label>
+              <select id="restoreMode" class="form-select"><option value="replace">Replace</option><option value="merge">Merge</option></select>
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-warning" id="restoreBtn">Restore</button>
+            </div>
+          </div>
+          <div id="restoreStatus" class="mt-2 small text-muted"></div>
+        </div>
+      </div>
     </div>
     <%- include('partials/footer') %>
   </div>
@@ -71,6 +95,35 @@
       ${d.perUser.map(u=>`<tr><td>${u.name||u.phone}</td><td>${u.count}</td><td>${fmt(u.income)}</td><td>${fmt(u.expense)}</td><td>${fmt(u.net)}</td></tr>`).join('')}
       </tbody></table>
     `;
+  });
+
+  document.getElementById('restoreBtn').addEventListener('click', async () => {
+    const phone = document.getElementById('restorePhone').value.trim();
+    const file = document.getElementById('restoreFile').files[0];
+    const mode = document.getElementById('restoreMode').value;
+    const status = document.getElementById('restoreStatus');
+    if (!phone || !file) { status.textContent = 'Nomor dan file wajib diisi.'; status.className='mt-2 small text-danger'; return; }
+    status.textContent = 'Membaca file...';
+    const reader = new FileReader();
+    reader.onload = async () => {
+      let parsed;
+      try { parsed = JSON.parse(reader.result); } catch (e) { status.textContent = 'File bukan JSON valid.'; status.className='mt-2 small text-danger'; return; }
+      status.textContent = 'Mengirim restore...';
+      const res = await fetch('/api/restore', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, backup: parsed, mode }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        status.textContent = `Restore selesai. ${data.data.restored} transaksi dipulihkan.`;
+        status.className = 'mt-2 small text-success';
+      } else {
+        status.textContent = data.error?.message || 'Gagal restore';
+        status.className = 'mt-2 small text-danger';
+      }
+    };
+    reader.readAsText(file);
   });
 </script>
 </body>

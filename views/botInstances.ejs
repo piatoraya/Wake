@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<script src="/assets/static/js/initTheme.js"></script>
+<div id="app">
+  <div id="sidebar" class="active"><%- include('partials/sidebar') %></div>
+  <div id="main">
+    <%- include('partials/navbar') %>
+    <div class="page-heading"><h3>Bot Instances (Sultan)</h3></div>
+    <div class="page-content">
+      <div class="card mb-3">
+        <div class="card-body">
+          <form id="createForm" class="row g-2 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label">Owner Phone</label>
+              <input type="text" id="ownerPhone" class="form-control" placeholder="628...">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Nama Bot</label>
+              <input type="text" id="botName" class="form-control" placeholder="bot_toko_budi">
+            </div>
+            <div class="col-md-4">
+              <button type="submit" class="btn btn-primary">Buat Instance</button>
+            </div>
+          </form>
+          <div id="createStatus" class="mt-2 small text-muted"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <table class="table table-striped">
+            <thead><tr><th>Nama</th><th>Owner</th><th>Slug</th><th>Session Dir</th><th>Status</th><th>Aksi</th></tr></thead>
+            <tbody id="instanceBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/static/js/components/dark.js"></script>
+<script src="/assets/extensions/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+  async function loadInstances() {
+    const res = await fetch('/api/bot-instances', {credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) return;
+    document.getElementById('instanceBody').innerHTML = data.data.map(i => `
+      <tr>
+        <td>${i.name}</td>
+        <td>${i.owner_phone}</td>
+        <td>${i.slug}</td>
+        <td><code>${i.session_dir}</code></td>
+        <td>${i.status}</td>
+        <td><button class="btn btn-sm btn-outline-danger" onclick="delInstance('${i.bot_id}')">Hapus</button></td>
+      </tr>
+    `).join('');
+  }
+  document.getElementById('createForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const status = document.getElementById('createStatus');
+    status.textContent = 'Membuat...';
+    const res = await fetch('/api/bot-instances', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_phone: document.getElementById('ownerPhone').value.trim(), name: document.getElementById('botName').value.trim() }),
+    });
+    const data = await res.json();
+    if (data.success) { status.textContent = 'Instance dibuat.'; status.className='mt-2 small text-success'; loadInstances(); }
+    else { status.textContent = data.error?.message || 'Gagal'; status.className='mt-2 small text-danger'; }
+  });
+  async function delInstance(id) {
+    if (!confirm('Hapus instance ini?')) return;
+    const res = await fetch('/api/bot-instances/'+id, { method: 'DELETE', credentials: 'same-origin' });
+    const data = await res.json();
+    if (data.success) loadInstances();
+    else alert(data.error?.message || 'Gagal');
+  }
+  loadInstances();
+</script>
+</body>
+</html>

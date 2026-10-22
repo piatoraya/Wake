@@ -15,7 +15,7 @@
         <div class="card-body">
           <div class="table-responsive">
             <table class="table table-striped">
-              <thead><tr><th>Nomor</th><th>Nama</th><th>TZ</th><th>Total Tx</th><th>Pemasukan</th><th>Pengeluaran</th><th>Aksi</th></tr></thead>
+              <thead><tr><th>Nomor</th><th>Nama</th><th>Tier</th><th>Bot Limit</th><th>TZ</th><th>Total Tx</th><th>Pemasukan</th><th>Pengeluaran</th><th>Aksi</th></tr></thead>
               <tbody id="userBody"></tbody>
             </table>
           </div>
@@ -24,6 +24,39 @@
       <div class="card mt-3">
         <div class="card-header"><h4>Detail Pengguna</h4></div>
         <div class="card-body" id="userDetail">Pilih pengguna...</div>
+      </div>
+
+      <!-- Modal Edit User -->
+      <div class="modal fade" id="editUserModal" tabindex="-1">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Edit Pengguna</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+              <input type="hidden" id="editPhone">
+              <div class="mb-3">
+                <label class="form-label">Tier</label>
+                <select id="editTier" class="form-select">
+                  <option value="free">Free</option>
+                  <option value="basic">Basic</option>
+                  <option value="premium">Premium</option>
+                  <option value="sultan">Sultan</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Limit Bot (Sultan)</label>
+                <input type="number" id="editBotLimit" class="form-control" min="0">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Expired Tier (YYYY-MM-DD, kosongkan jika free)</label>
+                <input type="date" id="editExpired" class="form-control">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+              <button class="btn btn-primary" onclick="saveUser()">Simpan</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <%- include('partials/footer') %>
@@ -43,11 +76,16 @@
       <tr>
         <td>${u.phone}</td>
         <td>${u.name||u.phone}</td>
+        <td><span class="badge bg-secondary">${u.tier||'free'}</span></td>
+        <td>${u.sultan_bot_limit ?? 1}</td>
         <td>${u.timezone||'-'}</td>
         <td>${u.stats?.count||0}</td>
         <td>${fmt(u.stats?.income||0)}</td>
         <td>${fmt(u.stats?.expense||0)}</td>
-        <td><button class="btn btn-sm btn-outline-primary" onclick="viewUser('${u.phone}')">Detail</button></td>
+        <td>
+          <button class="btn btn-sm btn-outline-primary" onclick="viewUser('${u.phone}')">Detail</button>
+          <button class="btn btn-sm btn-outline-warning" onclick="editUser('${u.phone}','${u.tier||'free'}',${u.sultan_bot_limit ?? 1})">Edit</button>
+        </td>
       </tr>
     `).join('');
   }
@@ -67,6 +105,30 @@
       ${d.transactions.map(t=>`<tr><td>${new Date(t.date).toLocaleString('id-ID')}</td><td>${t.type}</td><td>${t.category}</td><td>${fmt(t.amount)}</td></tr>`).join('')}
       </tbody></table></div>
     `;
+  }
+  function editUser(phone, tier, botLimit) {
+    document.getElementById('editPhone').value = phone;
+    document.getElementById('editTier').value = tier;
+    document.getElementById('editBotLimit').value = botLimit;
+    document.getElementById('editExpired').value = '';
+    new bootstrap.Modal(document.getElementById('editUserModal')).show();
+  }
+  async function saveUser() {
+    const phone = document.getElementById('editPhone').value;
+    const tier = document.getElementById('editTier').value;
+    const sultan_bot_limit = Number(document.getElementById('editBotLimit').value || 0);
+    const expiredRaw = document.getElementById('editExpired').value;
+    const tier_expired_at = expiredRaw ? new Date(expiredRaw).toISOString() : (tier === 'free' ? null : undefined);
+    const body = { tier, sultan_bot_limit };
+    if (tier_expired_at !== undefined) body.tier_expired_at = tier_expired_at;
+    const res = await fetch('/api/users/'+encodeURIComponent(phone), {
+      method: 'PUT', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.success) { bootstrap.Modal.getInstance(document.getElementById('editUserModal')).hide(); loadUsers(); }
+    else alert(data.error?.message || 'Gagal menyimpan');
   }
   loadUsers();
 </script>

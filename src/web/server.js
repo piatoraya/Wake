@@ -24,6 +24,8 @@ import botRoutes from './routes/bot.js';
 import adminRoutes from './routes/adminUsers.js';
 import auditRoutes from './routes/audit.js';
 import settingsRoutes from './routes/settings.js';
+import restoreRoutes from './routes/restore.js';
+import botInstanceRoutes from './routes/botInstances.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,6 +86,8 @@ export function createApp() {
   app.use('/api/admin-users', adminRoutes);
   app.use('/api/audit-logs', auditRoutes);
   app.use('/api/settings', settingsRoutes);
+  app.use('/api/restore', restoreRoutes);
+  app.use('/api/bot-instances', botInstanceRoutes);
 
   app.get('/health', (req, res) => res.json({ success: true, status: 'ok' }));
 
@@ -112,6 +116,7 @@ export function createApp() {
   app.get('/system', guard, (req, res) => res.render('system', { title: 'System Monitor', user: req.user }));
   app.get('/settings', guard, (req, res) => res.render('settings', { title: 'Pengaturan', user: req.user }));
   app.get('/admin-users', guard, (req, res) => res.render('adminUsers', { title: 'Admin Users', user: req.user }));
+  app.get('/bot-instances', guard, (req, res) => res.render('botInstances', { title: 'Bot Instances (Sultan)', user: req.user }));
 
   app.use((req, res) => res.status(404).render('error', { title: '404', message: 'Halaman tidak ditemukan', user: req.user || null }));
   app.use((err, req, res, next) => {

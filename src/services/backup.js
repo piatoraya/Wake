@@ -41,6 +41,7 @@ export const XLSX_MIME =
 
 /** MIME resmi file PDF. */
 export const PDF_MIME = 'application/pdf';
+export const JSON_MIME = 'application/json';
 
 export function getBackupDir() {
   return path.resolve(process.env.BACKUP_DIR || './backups');
@@ -178,14 +179,38 @@ export async function createBackupPdfFile(phone, { month = null } = {}) {
  * @param {{month?:string|null, quoted?:object|null, keepFile?:boolean}} [options]
  * @returns {Promise<{fileName:string, rowCount:number}>}
  */
+export async function createBackupJsonFile(phone, { month = null } = {}) {
+  const [user, transactions, wallets, budgets] = await Promise.all([
+    getUser(phone),
+    listTransactions(phone, { month }),
+    getWallets(phone),
+    getBudgets(phone),
+  ]);
+  const scope = month ? month.replace('-', '') : 'semua';
+  const fileName = `Backup_Keuangan_${String(phone).replace(/\\D/g, '')}_${scope}_${fileStamp()}.json`;
+  const filePath = path.join(getBackupDir(), fileName);
+  const payload = {
+    meta: { phone, exported_at: new Date().toISOString(), period: month || 'all' },
+    user,
+    transactions,
+    wallets,
+    budgets,
+  };
+  await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+  return { filePath, fileName, rowCount: transactions.length };
+}
+
 export async function sendBackup(sock, jid, phone, { month = null, format = 'xlsx', quoted = null, keepFile = false } = {}) {
   if (!sock?.user) throw new Error('Koneksi WhatsApp belum siap');
 
   const fmt = String(format || 'xlsx').toLowerCase();
   const isPdf = fmt === 'pdf';
-  const { filePath, fileName, rowCount } = isPdf
-    ? await createBackupPdfFile(phone, { month })
-    : await createBackupFile(phone, { month });
+  const isJson = fmt === 'json';
+  const { filePath, fileName, rowCount } = isJson
+    ? await createBackupJsonFile(phone, { month })
+    : isPdf
+      ? await createBackupPdfFile(phone, { month })
+      : await createBackupFile(phone, { month });
 
   try {
     // Statistik ringkas untuk caption lampiran
@@ -198,9 +223,11 @@ export async function sendBackup(sock, jid, phone, { month = null, format = 'xls
       `💚 Total pemasukan: *${formatRupiah(stats.income)}*`,
       `🧡 Total pengeluaran: *${formatRupiah(stats.expense)}*`,
       '',
-      isPdf
-        ? '_Format: PDF (ringkasan + daftar transaksi)_'
-        : '_Sheet: Transaksi • Ringkasan • Budget_',
+      isJson
+        ? '_Format: JSON (data mentah untuk restore)_'
+        : isPdf
+          ? '_Format: PDF (ringkasan + daftar transaksi)_'
+          : '_Sheet: Transaksi • Ringkasan • Budget_',
       '',
       'by: ampang dev',
     ].join('\n');
@@ -211,9 +238,9 @@ export async function sendBackup(sock, jid, phone, { month = null, format = 'xls
       jid,
       {
         document: buffer,
-        mimetype: isPdf ? PDF_MIME : XLSX_MIME,
+        mimetype: isJson ? JSON_MIME : isPdf ? PDF_MIME : XLSX_MIME,
         fileName,
-        caption: caption.replace('BACKUP KEUANGAN', isPdf ? 'BACKUP KEUANGAN (PDF)' : 'BACKUP KEUANGAN (EXCEL)'),
+        caption: caption.replace('BACKUP KEUANGAN', isJson ? 'BACKUP KEUANGAN (JSON)' : isPdf ? 'BACKUP KEUANGAN (PDF)' : 'BACKUP KEUANGAN (EXCEL)'),
       },
       quoted ? { quoted } : {},
     );
