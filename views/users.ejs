@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<script src="/assets/static/js/initTheme.js"></script>
+<div id="app">
+  <div id="sidebar" class="active"><%- include('partials/sidebar') %></div>
+  <div id="main">
+    <%- include('partials/navbar') %>
+    <div class="page-heading"><h3>Pengguna Bot</h3></div>
+    <div class="page-content">
+      <div class="card">
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-striped">
+              <thead><tr><th>Nomor</th><th>Nama</th><th>TZ</th><th>Total Tx</th><th>Pemasukan</th><th>Pengeluaran</th><th>Aksi</th></tr></thead>
+              <tbody id="userBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="card mt-3">
+        <div class="card-header"><h4>Detail Pengguna</h4></div>
+        <div class="card-body" id="userDetail">Pilih pengguna...</div>
+      </div>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/static/js/components/dark.js"></script>
+<script src="/assets/extensions/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+  const fmt = (n) => 'Rp ' + Math.round(n||0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  async function loadUsers() {
+    const res = await fetch('/api/users', {credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) return;
+    const tbody = document.getElementById('userBody');
+    tbody.innerHTML = data.data.map(u => `
+      <tr>
+        <td>${u.phone}</td>
+        <td>${u.name||u.phone}</td>
+        <td>${u.timezone||'-'}</td>
+        <td>${u.stats?.count||0}</td>
+        <td>${fmt(u.stats?.income||0)}</td>
+        <td>${fmt(u.stats?.expense||0)}</td>
+        <td><button class="btn btn-sm btn-outline-primary" onclick="viewUser('${u.phone}')">Detail</button></td>
+      </tr>
+    `).join('');
+  }
+  async function viewUser(phone) {
+    const res = await fetch('/api/users/'+encodeURIComponent(phone), {credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) return;
+    const d = data.data;
+    document.getElementById('userDetail').innerHTML = `
+      <p><strong>${d.user.name||d.user.phone}</strong> (${d.user.phone})</p>
+      <p>Zona waktu: ${d.timezone}</p>
+      <p>Pemasukan: ${fmt(d.stats.income)} | Pengeluaran: ${fmt(d.stats.expense)} | Net: ${fmt(d.stats.net)}</p>
+      <p>Wallet:</p><ul>${d.wallets.map(w=>`<li>${w.name}: ${fmt(w.balance)}</li>`).join('')}</ul>
+      <p>Budget:</p><ul>${d.budgets.map(b=>`<li>${b.category}: limit ${fmt(b.limit)}</li>`).join('')}</ul>
+      <p>Transaksi (${d.transactions.length}):</p>
+      <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Tanggal</th><th>Jenis</th><th>Kategori</th><th>Jumlah</th></tr></thead><tbody>
+      ${d.transactions.map(t=>`<tr><td>${new Date(t.date).toLocaleString('id-ID')}</td><td>${t.type}</td><td>${t.category}</td><td>${fmt(t.amount)}</td></tr>`).join('')}
+      </tbody></table></div>
+    `;
+  }
+  loadUsers();
+</script>
+</body>
+</html>

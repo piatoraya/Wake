@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<script src="/assets/static/js/initTheme.js"></script>
+<div id="app">
+  <div id="sidebar" class="active"><%- include('partials/sidebar') %></div>
+  <div id="main">
+    <%- include('partials/navbar') %>
+    <div class="page-heading"><h3>System Monitor</h3></div>
+    <div class="page-content">
+      <div class="row">
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-header"><h4>Status Bot</h4></div>
+            <div class="card-body" id="botStatus">Memuat...</div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-header"><h4>Rotasi Gemini</h4></div>
+            <div class="card-body" id="geminiStatus">Memuat...</div>
+          </div>
+        </div>
+      </div>
+      <div class="card mt-3">
+        <div class="card-header"><h4>Log Audit (Owner)</h4></div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Waktu</th><th>Admin</th><th>Aksi</th><th>Entitas</th></tr></thead>
+              <tbody id="auditBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/static/js/components/dark.js"></script>
+<script src="/assets/extensions/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+  const fmt = (n) => n;
+  async function loadStatus() {
+    const res = await fetch('/api/bot/status', {credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) return;
+    const d = data.data;
+    document.getElementById('botStatus').innerHTML = `
+      <p>Status: <strong>${d.status}</strong></p>
+      <p>Nomor: ${d.phone || '-'}</p>
+      <p>Metode: ${d.method || '-'}</p>
+      <p>Uptime: ${d.uptime}s</p>
+      <p>Error terakhir: ${d.lastError || '-'}</p>
+    `;
+    const g = d.gemini;
+    if (g) {
+      document.getElementById('geminiStatus').innerHTML = `
+        <p>Models: ${(g.models||[]).join(', ')}</p>
+        <p>Keys: ${(g.keys||[]).map(k=>`#${k.index} ${k.masked} ${k.invalid?'(invalid)':''}`).join('<br>')}</p>
+        <p>Exhausted pairs: ${(g.exhaustedPairs||[]).join(', ') || '-'}</p>
+      `;
+    } else {
+      document.getElementById('geminiStatus').textContent = 'Tidak tersedia';
+    }
+  }
+  async function loadAudit() {
+    const res = await fetch('/api/audit-logs?limit=50', {credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) return;
+    document.getElementById('auditBody').innerHTML = data.data.map(a => `
+      <tr><td>${new Date(a.created_at).toLocaleString('id-ID')}</td><td>${a.admin_id}</td><td>${a.action}</td><td>${a.entity} ${a.entity_id||''}</td></tr>
+    `).join('');
+  }
+  loadStatus(); loadAudit();
+</script>
+</body>
+</html>

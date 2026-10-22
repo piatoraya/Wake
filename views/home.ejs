@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="id" data-bs-theme="light">
+<head>
+  <%- include('partials/head') %>
+  <style>
+    :root { --ca-primary: #22c55e; --ca-dark: #0f172a; }
+    .hero { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #fff; padding: 80px 0; }
+    .hero h1 { font-size: 3rem; font-weight: 800; }
+    .feature-card { border: none; border-radius: 16px; transition: transform .2s; }
+    .feature-card:hover { transform: translateY(-6px); }
+    .feature-icon { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: #fff; }
+    .bg-ca { background: var(--ca-primary); }
+    .btn-ca { background: var(--ca-primary); color: #fff; border: none; }
+    .btn-ca:hover { background: #16a34a; color: #fff; }
+    .contact-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+    .contact-item:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="main" style="margin-left:0">
+    <header class="mb-0">
+      <nav class="navbar navbar-expand navbar-light navbar-top" style="background:#fff;">
+        <div class="container">
+          <a class="navbar-brand fw-bold" href="/" style="color:var(--ca-primary);">CatatAja</a>
+          <div class="ms-auto d-flex gap-2">
+            <a href="/fitur" class="nav-link">Fitur</a>
+            <a href="/harga" class="nav-link">Harga</a>
+            <a href="/kontak" class="nav-link">Kontak</a>
+
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="container text-center">
+        <span class="badge bg-ca mb-3">Supercharge Finansialmu</span>
+        <h1>Semua Fitur yang Kamu<br>Butuhkan, Tanpa Ribet.</h1>
+        <p class="lead mt-3 text-white-50">Dari pencatatan otomatis hingga laporan keuangan instan — semua berjalan langsung dari WhatsApp tanpa perlu download aplikasi tambahan.</p>
+        <div class="mt-4">
+          <a href="https://wa.me/message/MBKOY5MDII6OO1" class="btn btn-ca btn-lg me-2">Mulai Gratis via WhatsApp</a>
+          <a href="/fitur" class="btn btn-outline-light btn-lg">Lihat Fitur</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="container py-5">
+      <div class="text-center mb-5">
+        <h2 class="fw-bold">Semua yang Kamu Dapat</h2>
+        <p class="text-muted">Fitur lengkap untuk mengelola keuanganmu dari ujung ke ujung.</p>
+      </div>
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="card feature-card shadow-sm h-100">
+            <div class="card-body">
+              <div class="feature-icon bg-ca mb-3"><i class="bi bi-chat-dots-fill"></i></div>
+              <h5>Pencatatan Instan via Chat</h5>
+              <p class="text-muted">Ketik "nasi padang 25k" lalu kirim. AI kami langsung mengenali jumlah, kategori, dan menyimpannya otomatis.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card feature-card shadow-sm h-100">
+            <div class="card-body">
+              <div class="feature-icon bg-ca mb-3"><i class="bi bi-pie-chart-fill"></i></div>
+              <h5>Kontrol Budget Real-time</h5>
+              <p class="text-muted">Tetapkan batas pengeluaran per kategori. Dapat peringatan otomatis sebelum budget melewati batas.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card feature-card shadow-sm h-100">
+            <div class="card-body">
+              <div class="feature-icon bg-ca mb-3"><i class="bi bi-lightbulb-fill"></i></div>
+              <h5>Insight Cerdas dari AI</h5>
+              <p class="text-muted">Dapatkan analisis pola pengeluaran dan saran penghematan personal setiap minggu.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card feature-card shadow-sm h-100">
+            <div class="card-body">
+              <div class="feature-icon bg-ca mb-3"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div>
+              <h5>Ekspor Laporan Instan</h5>
+              <p class="text-muted">Download ringkasan keuangan dalam format Excel atau PDF kapan saja, lengkap dengan grafik visual.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card feature-card shadow-sm h-100">
+            <div class="card-body">
+              <div class="feature-icon bg-ca mb-3"><i class="bi bi-receipt"></i></div>
+              <h5>Foto Struk (OCR)</h5>
+              <p class="text-muted">Kirim foto struk belanja, AI membaca total, toko, tanggal, dan item secara otomatis.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card feature-card shadow-sm h-100">
+            <div class="card-body">
+              <div class="feature-icon bg-ca mb-3"><i class="bi bi-mic-fill"></i></div>
+              <h5>Voice Note</h5>
+              <p class="text-muted">Catat transaksi lewat suara. AI mentranskripsi dan menyimpannya otomatis.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="container py-5">
+      <div class="row justify-content-center">
+        <div class="col-md-8">
+          <div class="card shadow-sm">
+            <div class="card-header"><h4>Kontak & Support</h4></div>
+            <div class="card-body" id="contactList">Memuat...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+  fetch('/api/public/contacts').then(r=>r.json()).then(data => {
+    if (!data.success || !data.data.length) { document.getElementById('contactList').textContent = 'Belum ada kontak aktif'; return; }
+    document.getElementById('contactList').innerHTML = '<div>' + data.data.map(c => `<div class="contact-item"><span>${c.label}</span><span class="fw-bold">${c.value || '-'}</span></div>`).join('') + '</div>';
+  }).catch(() => { document.getElementById('contactList').textContent = 'Gagal memuat kontak'; });
+</script>
+</body>
+</html>

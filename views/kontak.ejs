@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="id" data-bs-theme="light">
+<head>
+  <%- include('partials/head') %>
+  <style>
+    .contact-item { display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid #e2e8f0; }
+    .contact-item:last-child { border-bottom:none; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="main" style="margin-left:0">
+    <%- include('partials/publicNav') %>
+    <section class="container py-5">
+      <div class="text-center mb-4">
+        <h1 class="fw-bold">Kontak & Support</h1>
+        <p class="text-muted">Tim CatatAja siap membantu.</p>
+      </div>
+      <div class="row justify-content-center">
+        <div class="col-md-7">
+          <div class="card shadow-sm">
+            <div class="card-body" id="contactList">Memuat...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+  fetch('/api/public/contacts').then(r=>r.json()).then(data => {
+    const el = document.getElementById('contactList');
+    if (!data.success || !data.data.length) { el.textContent = 'Belum ada kontak aktif'; return; }
+    el.innerHTML = data.data.map(c => `<div class="contact-item"><span>${c.label}</span><span class="fw-bold">${c.value || '-'}</span></div>`).join('');
+  }).catch(() => { document.getElementById('contactList').textContent = 'Gagal memuat kontak'; });
+</script>
+</body>
+</html>

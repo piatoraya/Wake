@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="id" data-bs-theme="light">
+<head>
+  <%- include('partials/head') %>
+  <style>
+    .hero { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color:#fff; padding:70px 0; }
+    .feature-icon { width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:#22c55e;color:#fff;font-size:1.3rem; }
+    .feature-card { border:none;border-radius:14px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="main" style="margin-left:0">
+    <%- include('partials/publicNav') %>
+    <section class="hero">
+      <div class="container text-center">
+        <h1 class="fw-bold">Semua Fitur yang Kamu Butuhkan</h1>
+        <p class="lead text-white-50">Dari pencatatan otomatis hingga laporan keuangan instan — semua dari WhatsApp.</p>
+      </div>
+    </section>
+    <section class="container py-5">
+      <div class="row g-4">
+        <% const features = [
+          ['bi-chat-dots-fill','Catatan Teks','Banyak transaksi dalam 1 pesan'],
+          ['bi-receipt','Foto Struk','Tak terbatas, OCR otomatis'],
+          ['bi-mic-fill','Voice Note','Catat transaksi lewat suara'],
+          ['bi-pencil-square','Edit/Hapus Transaksi','Koreksi data kapan saja'],
+          ['bi-tags-fill','Kategori Kustom','Buat kategori sesuai kebutuhan'],
+          ['bi-clock-history','Riwayat Data','Tak terbatas'],
+          ['bi-whatsapp','Ringkasan via WA','Laporan mingguan & bulanan otomatis'],
+          ['bi-bell-fill','Pengingat Anggaran','Notifikasi saat mendekati limit'],
+          ['bi-speedometer2','Dashboard Web','Visualisasi data via browser'],
+          ['bi-file-earmark-spreadsheet-fill','Ekspor Multi-Format','CSV, Google Sheets & Notion'],
+          ['bi-pie-chart-fill','Budget Planning','Rencanakan anggaran bulanan'],
+          ['bi-piggy-bank-fill','Saving Goals','Target tabungan yang terukur'],
+          ['bi-lightbulb-fill','AI Insight Proaktif','Saran cerdas secara otomatis'],
+          ['bi-heart-pulse-fill','Financial Health Score','Skor kesehatan keuanganmu'],
+          ['bi-phone-fill','iOS Shortcut','Akses cepat dari Home Screen'],
+          ['bi-headset','Dukungan Prioritas','Respons cepat tim support'],
+        ]; %>
+        <% features.forEach(([icon,title,desc]) => { %>
+          <div class="col-md-4 col-lg-3">
+            <div class="card feature-card shadow-sm h-100">
+              <div class="card-body">
+                <div class="feature-icon mb-3"><i class="bi <%= icon %>"></i></div>
+                <h6 class="fw-bold"><%= title %></h6>
+                <p class="text-muted small mb-0"><%= desc %></p>
+              </div>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    </section>
+    <section class="container py-5 text-center">
+      <h2 class="fw-bold">Siap untuk Memulai?</h2>
+      <p class="text-muted">Gratis selamanya. Langsung berjalan di atas WhatsApp.</p>
+      <a href="https://wa.me/message/MBKOY5MDII6OO1" class="btn btn-success btn-lg" style="background:#22c55e;border:none;">Mulai Gratis via WhatsApp</a>
+    </section>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/compiled/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="id" data-bs-theme="light">
+<head>
+  <%- include('partials/head') %>
+  <style>
+    .price-card { border:none;border-radius:16px; }
+    .price-card.popular { border:2px solid #22c55e; }
+    .btn-ca { background:#22c55e;border:none;color:#fff; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="main" style="margin-left:0">
+    <%- include('partials/publicNav') %>
+    <section class="container py-5">
+      <div class="text-center mb-5">
+        <h1 class="fw-bold">Pilih Paketmu</h1>
+        <p class="text-muted">Mulai gratis, upgrade kapan saja.</p>
+      </div>
+      <div class="row g-4 justify-content-center">
+        <div class="col-md-4">
+          <div class="card price-card shadow-sm h-100">
+            <div class="card-body text-center p-4">
+              <h5>Gratis</h5>
+              <h2 class="fw-bold">Rp 0</h2>
+              <p class="text-muted">/bulan</p>
+              <ul class="list-unstyled text-start mt-4">
+                <li>✅ 50 pesan/bulan (Telegram)</li>
+                <li>✅ Catatan teks & voice note</li>
+                <li>✅ Kategori dasar</li>
+                <li>❌ WhatsApp</li>
+              </ul>
+              <a href="https://wa.me/message/MBKOY5MDII6OO1" class="btn btn-outline-success w-100 mt-3">Mulai Gratis</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card price-card popular shadow h-100">
+            <div class="card-body text-center p-4">
+              <span class="badge bg-success mb-2">Populer</span>
+              <h5>Plus</h5>
+              <h2 class="fw-bold">Rp 29.900</h2>
+              <p class="text-muted">/bulan</p>
+              <ul class="list-unstyled text-start mt-4">
+                <li>✅ Kuota WhatsApp</li>
+                <li>✅ Ekspor Excel</li>
+                <li>✅ Foto struk OCR</li>
+                <li>✅ Budget & reminder</li>
+              </ul>
+              <a href="https://wa.me/message/MBKOY5MDII6OO1" class="btn btn-ca w-100 mt-3">Pilih Plus</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card price-card shadow-sm h-100">
+            <div class="card-body text-center p-4">
+              <h5>Pro</h5>
+              <h2 class="fw-bold">Rp 49.000</h2>
+              <p class="text-muted">/bulan</p>
+              <ul class="list-unstyled text-start mt-4">
+                <li>✅ Kuota dobel</li>
+                <li>✅ Semua fitur Plus</li>
+                <li>✅ Prioritas support</li>
+                <li>✅ AI insight proaktif</li>
+              </ul>
+              <a href="https://wa.me/message/MBKOY5MDII6OO1" class="btn btn-outline-success w-100 mt-3">Pilih Pro</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/compiled/js/app.js"></script>
+</body>
+</html>

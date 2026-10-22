@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<script src="/assets/static/js/initTheme.js"></script>
+<div id="app">
+  <div id="sidebar" class="active"><%- include('partials/sidebar') %></div>
+  <div id="main">
+    <%- include('partials/navbar') %>
+    <div class="page-heading"><h3>Laporan</h3></div>
+    <div class="page-content">
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label">Bulan</label>
+              <input type="month" id="repMonth" class="form-control">
+            </div>
+            <div class="col-md-3">
+              <button class="btn btn-primary" id="loadSummary">Tampilkan Ringkasan</button>
+            </div>
+            <div class="col-md-6 text-end">
+              <a id="expCsv" class="btn btn-outline-secondary" target="_blank">Export CSV</a>
+              <a id="expXlsx" class="btn btn-outline-success" target="_blank">Export Excel</a>
+              <a id="expPdf" class="btn btn-outline-danger" target="_blank">Export PDF</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h4>Ringkasan Bulanan</h4></div>
+        <div class="card-body" id="summaryBody">Pilih bulan lalu klik Tampilkan.</div>
+      </div>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/static/js/components/dark.js"></script>
+<script src="/assets/extensions/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+  const fmt = (n) => 'Rp ' + Math.round(n||0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const monthInput = document.getElementById('repMonth');
+  const now = new Date();
+  monthInput.value = now.toISOString().slice(0,7);
+
+  function updateLinks() {
+    const m = monthInput.value;
+    document.getElementById('expCsv').href = '/api/reports/export?format=csv&month=' + m;
+    document.getElementById('expXlsx').href = '/api/reports/export?format=xlsx&month=' + m;
+    document.getElementById('expPdf').href = '/api/reports/export?format=pdf&month=' + m;
+  }
+  updateLinks();
+  monthInput.addEventListener('change', updateLinks);
+
+  document.getElementById('loadSummary').addEventListener('click', async () => {
+    const m = monthInput.value;
+    const res = await fetch('/api/reports/summary?month=' + m, {credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) { document.getElementById('summaryBody').textContent = data.error?.message || 'Gagal'; return; }
+    const d = data.data;
+    document.getElementById('summaryBody').innerHTML = `
+      <p><strong>${d.monthLabel}</strong></p>
+      <p>Pemasukan: ${fmt(d.totalIncome)} | Pengeluaran: ${fmt(d.totalExpense)} | Net: ${fmt(d.net)}</p>
+      <h5>Per Kategori</h5>
+      <ul>${d.categories.map(c=>`<li>${c.category}: ${fmt(c.amount)}</li>`).join('')}</ul>
+      <h5>Per Pengguna</h5>
+      <table class="table table-sm"><thead><tr><th>Nama</th><th>Tx</th><th>Pemasukan</th><th>Pengeluaran</th><th>Net</th></tr></thead><tbody>
+      ${d.perUser.map(u=>`<tr><td>${u.name||u.phone}</td><td>${u.count}</td><td>${fmt(u.income)}</td><td>${fmt(u.expense)}</td><td>${fmt(u.net)}</td></tr>`).join('')}
+      </tbody></table>
+    `;
+  });
+</script>
+</body>
+</html>

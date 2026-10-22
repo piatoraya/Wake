@@ -1,0 +1,25 @@
+<header class="mb-3">
+  <nav class="navbar navbar-expand navbar-light navbar-top">
+    <div class="container-fluid">
+      <a href="#" class="burger-btn d-block d-xl-none"><i class="bi bi-justify fs-3"></i></a>
+      <div class="d-flex align-items-center ms-auto gap-3">
+        <span class="text-muted small" id="userInfo"><%= user ? (user.name || user.username) + ' (' + user.role + ')' : '' %></span>
+        <div class="dropdown">
+          <a href="#" data-bs-toggle="dropdown" class="d-flex align-items-center"><i class="bi bi-person-circle fs-4"></i></a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/admin-users">Admin Users</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="#" id="logoutLink">Logout</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const logout = () => { fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'}).then(()=>location.href='/login'); };
+    document.getElementById('logoutBtn')?.addEventListener('click', (e)=>{e.preventDefault();logout();});
+    document.getElementById('logoutLink')?.addEventListener('click', (e)=>{e.preventDefault();logout();});
+  });
+</script>

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<script src="/assets/static/js/initTheme.js"></script>
+<div id="app">
+  <div id="sidebar" class="active"><%- include('partials/sidebar') %></div>
+  <div id="main">
+    <%- include('partials/navbar') %>
+    <div class="page-heading"><h3>Admin Users</h3></div>
+    <div class="page-content">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h4 class="mb-0">Daftar Admin</h4>
+          <button class="btn btn-primary" id="btnAddAdmin">+ Tambah</button>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-striped">
+              <thead><tr><th>Username</th><th>Nama</th><th>Role</th><th>Aktif</th><th>Aksi</th></tr></thead>
+              <tbody id="adminBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+
+<div class="modal fade" id="adminModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Admin User</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="adminId">
+        <div class="mb-3"><label class="form-label">Username</label><input type="text" id="adminUsername" class="form-control" required></div>
+        <div class="mb-3"><label class="form-label">Password (kosongkan jika tidak diubah)</label><input type="password" id="adminPassword" class="form-control"></div>
+        <div class="mb-3"><label class="form-label">Nama</label><input type="text" id="adminName" class="form-control"></div>
+        <div class="mb-3"><label class="form-label">Role</label>
+          <select id="adminRole" class="form-select"><option value="admin">Admin</option><option value="owner">Owner</option></select>
+        </div>
+        <div class="form-check"><input type="checkbox" id="adminActive" class="form-check-input" checked><label class="form-check-label" for="adminActive">Aktif</label></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+        <button type="button" class="btn btn-primary" id="adminSave">Simpan</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/static/js/components/dark.js"></script>
+<script src="/assets/extensions/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+<script src="/assets/compiled/js/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  let admins = [];
+  async function loadAdmins() {
+    const res = await fetch('/api/admin-users', {credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) { document.getElementById('adminBody').innerHTML = '<tr><td colspan="5">Akses ditolak / gagal</td></tr>'; return; }
+    admins = data.data;
+    document.getElementById('adminBody').innerHTML = admins.map(a => `
+      <tr>
+        <td>${a.username}</td>
+        <td>${a.name}</td>
+        <td>${a.role}</td>
+        <td>${a.is_active ? 'Ya' : 'Tidak'}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-primary" onclick="editAdmin('${a.id}')">Edit</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="delAdmin('${a.id}')">Hapus</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+  function editAdmin(id) {
+    const a = admins.find(x=>x.id===id);
+    if (!a) return;
+    document.getElementById('adminId').value = a.id;
+    document.getElementById('adminUsername').value = a.username;
+    document.getElementById('adminPassword').value = '';
+    document.getElementById('adminName').value = a.name;
+    document.getElementById('adminRole').value = a.role;
+    document.getElementById('adminActive').checked = a.is_active;
+    new bootstrap.Modal(document.getElementById('adminModal')).show();
+  }
+  async function delAdmin(id) {
+    if (!confirm('Hapus admin ini?')) return;
+    const res = await fetch('/api/admin-users/'+id, {method:'DELETE', credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) alert(data.error?.message || 'Gagal');
+    loadAdmins();
+  }
+  document.getElementById('btnAddAdmin').addEventListener('click', () => {
+    document.getElementById('adminId').value = '';
+    document.getElementById('adminUsername').value = '';
+    document.getElementById('adminPassword').value = '';
+    document.getElementById('adminName').value = '';
+    document.getElementById('adminRole').value = 'admin';
+    document.getElementById('adminActive').checked = true;
+    new bootstrap.Modal(document.getElementById('adminModal')).show();
+  });
+  document.getElementById('adminSave').addEventListener('click', async () => {
+    const id = document.getElementById('adminId').value;
+    const body = {
+      username: document.getElementById('adminUsername').value,
+      name: document.getElementById('adminName').value,
+      role: document.getElementById('adminRole').value,
+      is_active: document.getElementById('adminActive').checked,
+    };
+    const pw = document.getElementById('adminPassword').value;
+    if (pw) body.password = pw;
+    const url = id ? '/api/admin-users/'+id : '/api/admin-users';
+    const method = id ? 'PUT' : 'POST';
+    if (!id && !pw) { alert('Password wajib untuk admin baru'); return; }
+    const res = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body), credentials:'same-origin'});
+    const data = await res.json();
+    if (data.success) {
+      bootstrap.Modal.getInstance(document.getElementById('adminModal')).hide();
+      loadAdmins();
+    } else alert(data.error?.message || 'Gagal');
+  });
+  loadAdmins();
+</script>
+</body>
+</html>

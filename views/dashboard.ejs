@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<script src="/assets/static/js/initTheme.js"></script>
+<div id="app">
+  <div id="sidebar" class="active"><%- include('partials/sidebar') %></div>
+  <div id="main">
+    <%- include('partials/navbar') %>
+    <div class="page-heading">
+      <h3>Dashboard</h3>
+      <p class="text-subtitle text-muted">Ringkasan keuangan semua pengguna</p>
+    </div>
+    <div class="page-content">
+      <section class="row">
+        <div class="col-12 col-lg-4">
+          <div class="card">
+            <div class="card-body px-4 py-4-5">
+              <div class="row">
+                <div class="col-md-4 col-lg-12 col-xl-12 col-xxl-5 d-flex justify-content-start">
+                  <div class="stats-icon purple mb-2"><i class="bi bi-wallet2"></i></div>
+                </div>
+                <div class="col-md-8 col-lg-12 col-xl-12 col-xxl-7">
+                  <h6 class="text-muted font-semibold">Total Pemasukan</h6>
+                  <h6 class="font-extrabold mb-0" id="kpiIncome">Rp 0</h6>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-4">
+          <div class="card">
+            <div class="card-body px-4 py-4-5">
+              <div class="row">
+                <div class="col-md-4 col-lg-12 col-xl-12 col-xxl-5 d-flex justify-content-start">
+                  <div class="stats-icon red mb-2"><i class="bi bi-cash-stack"></i></div>
+                </div>
+                <div class="col-md-8 col-lg-12 col-xl-12 col-xxl-7">
+                  <h6 class="text-muted font-semibold">Total Pengeluaran</h6>
+                  <h6 class="font-extrabold mb-0" id="kpiExpense">Rp 0</h6>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-4">
+          <div class="card">
+            <div class="card-body px-4 py-4-5">
+              <div class="row">
+                <div class="col-md-4 col-lg-12 col-xl-12 col-xxl-5 d-flex justify-content-start">
+                  <div class="stats-icon blue mb-2"><i class="bi bi-graph-up"></i></div>
+                </div>
+                <div class="col-md-8 col-lg-12 col-xl-12 col-xxl-7">
+                  <h6 class="text-muted font-semibold">Saldo Bersih</h6>
+                  <h6 class="font-extrabold mb-0" id="kpiNet">Rp 0</h6>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="row">
+        <div class="col-12 col-lg-8">
+          <div class="card">
+            <div class="card-header"><h4>Tren Arus Kas</h4></div>
+            <div class="card-body">
+              <div id="cashflowChart"></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-4">
+          <div class="card">
+            <div class="card-header"><h4>Pengeluaran per Kategori</h4></div>
+            <div class="card-body">
+              <div id="categoryChart"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="row">
+        <div class="col-12 col-lg-6">
+          <div class="card">
+            <div class="card-header"><h4>Saldo Wallet</h4></div>
+            <div class="card-body" id="walletList"></div>
+          </div>
+        </div>
+        <div class="col-12 col-lg-6">
+          <div class="card">
+            <div class="card-header"><h4>Transaksi Terbaru</h4></div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                  <thead><tr><th>Tanggal</th><th>Pengguna</th><th>Kategori</th><th>Jumlah</th></tr></thead>
+                  <tbody id="recentBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/static/js/components/dark.js"></script>
+<script src="/assets/extensions/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+<script src="/assets/compiled/js/app.js"></script>
+<script src="/assets/extensions/apexcharts/apexcharts.min.js"></script>
+<script>
+  const fmt = (n) => 'Rp ' + Math.round(n||0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  async function loadSummary() {
+    const res = await fetch('/api/dashboard/summary', { credentials: 'same-origin' });
+    const data = await res.json();
+    if (!data.success) return;
+    const d = data.data;
+    document.getElementById('kpiIncome').textContent = fmt(d.totalIncome);
+    document.getElementById('kpiExpense').textContent = fmt(d.totalExpense);
+    document.getElementById('kpiNet').textContent = fmt(d.net);
+    const wl = document.getElementById('walletList');
+    wl.innerHTML = d.wallets.map(w => `<div class="d-flex justify-content-between mb-2"><span>${w.name}</span><span class="fw-bold">${fmt(w.balance)}</span></div>`).join('') || '<p class="text-muted">Belum ada wallet</p>';
+  }
+  async function loadCashflow() {
+    const res = await fetch('/api/dashboard/cashflow?granularity=daily', { credentials: 'same-origin' });
+    const data = await res.json();
+    if (!data.success) return;
+    const categories = data.data.map(x => x.period);
+    const income = data.data.map(x => x.income);
+    const expense = data.data.map(x => x.expense);
+    const options = {
+      series: [{ name: 'Pemasukan', data: income }, { name: 'Pengeluaran', data: expense }],
+      chart: { type: 'bar', height: 320 },
+      xaxis: { categories },
+      colors: ['#435ebe', '#ff7976'],
+      dataLabels: { enabled: false },
+    };
+    new ApexCharts(document.querySelector('#cashflowChart'), options).render();
+  }
+  async function loadCategories() {
+    const res = await fetch('/api/dashboard/categories', { credentials: 'same-origin' });
+    const data = await res.json();
+    if (!data.success) return;
+    const labels = data.data.map(x => x.category);
+    const series = data.data.map(x => x.amount);
+    const options = {
+      series,
+      chart: { type: 'donut', height: 320 },
+      labels,
+      legend: { position: 'bottom' },
+    };
+    new ApexCharts(document.querySelector('#categoryChart'), options).render();
+  }
+  async function loadRecent() {
+    const res = await fetch('/api/dashboard/recent', { credentials: 'same-origin' });
+    const data = await res.json();
+    if (!data.success) return;
+    const tbody = document.getElementById('recentBody');
+    tbody.innerHTML = data.data.map(t => `<tr><td>${new Date(t.date).toLocaleDateString('id-ID')}</td><td>${t.user_name||t.user_phone}</td><td>${t.category}</td><td>${fmt(t.amount)}</td></tr>`).join('');
+  }
+  loadSummary(); loadCashflow(); loadCategories(); loadRecent();
+</script>
+</body>
+</html>

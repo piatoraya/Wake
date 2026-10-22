@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<script src="/assets/static/js/initTheme.js"></script>
+<div id="app">
+  <div id="sidebar" class="active"><%- include('partials/sidebar') %></div>
+  <div id="main">
+    <%- include('partials/navbar') %>
+    <div class="page-heading">
+      <h3>Transaksi</h3>
+      <p class="text-subtitle text-muted">Kelola data transaksi</p>
+    </div>
+    <div class="page-content">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h4 class="mb-0">Daftar Transaksi</h4>
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#txModal" id="btnAdd">+ Tambah</button>
+        </div>
+        <div class="card-body">
+          <div class="row mb-3">
+            <div class="col-md-2"><input type="date" id="fFrom" class="form-control" placeholder="Dari"></div>
+            <div class="col-md-2"><input type="date" id="fTo" class="form-control" placeholder="Sampai"></div>
+            <div class="col-md-2">
+              <select id="fType" class="form-select"><option value="">Semua Jenis</option><option value="income">Pemasukan</option><option value="expense">Pengeluaran</option></select>
+            </div>
+            <div class="col-md-2">
+              <select id="fCategory" class="form-select"><option value="">Semua Kategori</option></select>
+            </div>
+            <div class="col-md-2">
+              <select id="fUser" class="form-select"><option value="">Semua Pengguna</option></select>
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-secondary w-100" id="btnFilter">Filter</button>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-striped" id="txTable">
+              <thead><tr><th>Tanggal</th><th>Pengguna</th><th>Jenis</th><th>Kategori</th><th>Wallet</th><th>Deskripsi</th><th>Jumlah</th><th>Aksi</th></tr></thead>
+              <tbody id="txBody"></tbody>
+            </table>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mt-2">
+            <span id="txMeta" class="text-muted small"></span>
+            <div>
+              <button class="btn btn-sm btn-outline-secondary" id="prevPage">Prev</button>
+              <button class="btn btn-sm btn-outline-secondary" id="nextPage">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="txModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="txModalTitle">Tambah Transaksi</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="txId">
+        <div class="mb-3">
+          <label class="form-label">Pengguna</label>
+          <select id="txUser" class="form-select" required></select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Jenis</label>
+          <select id="txType" class="form-select" required>
+            <option value="expense">Pengeluaran</option>
+            <option value="income">Pemasukan</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Jumlah</label>
+          <input type="number" id="txAmount" class="form-control" required min="1">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Kategori</label>
+          <select id="txCategory" class="form-select"></select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Wallet</label>
+          <select id="txWallet" class="form-select">
+            <option>Cash</option><option>BCA</option><option>QRIS</option><option>GoPay</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Tanggal</label>
+          <input type="datetime-local" id="txDate" class="form-control">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Deskripsi</label>
+          <textarea id="txDesc" class="form-control"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+        <button type="button" class="btn btn-primary" id="txSave">Simpan</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/static/js/components/dark.js"></script>
+<script src="/assets/extensions/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+<script src="/assets/compiled/js/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  const fmt = (n) => 'Rp ' + Math.round(n||0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  let page = 1;
+  const limit = 25;
+  let categories = [];
+  let users = [];
+
+  async function loadMeta() {
+    const [cu, uu] = await Promise.all([
+      fetch('/api/categories', {credentials:'same-origin'}).then(r=>r.json()),
+      fetch('/api/users', {credentials:'same-origin'}).then(r=>r.json()),
+    ]);
+    categories = cu.success ? cu.data : [];
+    users = uu.success ? uu.data : [];
+    const catSel = document.getElementById('fCategory');
+    const txCat = document.getElementById('txCategory');
+    const txUser = document.getElementById('txUser');
+    const fUser = document.getElementById('fUser');
+    catSel.innerHTML = '<option value="">Semua Kategori</option>' + categories.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');
+    txCat.innerHTML = categories.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');
+    txUser.innerHTML = users.map(u=>`<option value="${u.phone}">${u.name||u.phone}</option>`).join('');
+    fUser.innerHTML = '<option value="">Semua Pengguna</option>' + users.map(u=>`<option value="${u.phone}">${u.name||u.phone}</option>`).join('');
+  }
+
+  async function loadTx() {
+    const params = new URLSearchParams();
+    params.set('page', page);
+    params.set('limit', limit);
+    const from = document.getElementById('fFrom').value;
+    const to = document.getElementById('fTo').value;
+    const type = document.getElementById('fType').value;
+    const category = document.getElementById('fCategory').value;
+    const user = document.getElementById('fUser').value;
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (type) params.set('type', type);
+    if (category) params.set('category', category);
+    if (user) params.set('phone', user);
+    const res = await fetch('/api/transactions?' + params.toString(), {credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) return;
+    const tbody = document.getElementById('txBody');
+    tbody.innerHTML = data.data.map(t => `
+      <tr>
+        <td>${new Date(t.date).toLocaleString('id-ID')}</td>
+        <td>${t.user_name||t.user_phone}</td>
+        <td><span class="badge ${t.type==='income'?'bg-success':'bg-danger'}">${t.type}</span></td>
+        <td>${t.category}</td>
+        <td>${t.wallet}</td>
+        <td>${t.description||''}</td>
+        <td>${fmt(t.amount)}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-primary" onclick="editTx('${t.id}')">Edit</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="delTx('${t.id}')">Hapus</button>
+        </td>
+      </tr>
+    `).join('');
+    document.getElementById('txMeta').textContent = `Total ${data.meta.total} | Halaman ${data.meta.page}`;
+  }
+
+  async function editTx(id) {
+    const res = await fetch('/api/transactions/' + id, {credentials:'same-origin'});
+    const data = await res.json();
+    if (!data.success) return;
+    const t = data.data;
+    document.getElementById('txId').value = t.id;
+    document.getElementById('txUser').value = t.user_phone;
+    document.getElementById('txType').value = t.type;
+    document.getElementById('txAmount').value = t.amount;
+    document.getElementById('txCategory').value = t.category;
+    document.getElementById('txWallet').value = t.wallet;
+    document.getElementById('txDesc').value = t.description || '';
+    if (t.date) document.getElementById('txDate').value = new Date(t.date).toISOString().slice(0,16);
+    document.getElementById('txModalTitle').textContent = 'Edit Transaksi';
+    new bootstrap.Modal(document.getElementById('txModal')).show();
+  }
+
+  async function delTx(id) {
+    if (!confirm('Hapus transaksi ini?')) return;
+    await fetch('/api/transactions/' + id, {method:'DELETE', credentials:'same-origin'});
+    loadTx();
+  }
+
+  document.getElementById('btnAdd').addEventListener('click', () => {
+    document.getElementById('txId').value = '';
+    document.getElementById('txModalTitle').textContent = 'Tambah Transaksi';
+    document.getElementById('txAmount').value = '';
+    document.getElementById('txDesc').value = '';
+    document.getElementById('txDate').value = '';
+  });
+
+  document.getElementById('btnFilter').addEventListener('click', () => { page = 1; loadTx(); });
+  document.getElementById('prevPage').addEventListener('click', () => { if (page>1){page--;loadTx();} });
+  document.getElementById('nextPage').addEventListener('click', () => { page++; loadTx(); });
+
+  document.getElementById('txSave').addEventListener('click', async () => {
+    const id = document.getElementById('txId').value;
+    const body = {
+      user_phone: document.getElementById('txUser').value,
+      type: document.getElementById('txType').value,
+      amount: Number(document.getElementById('txAmount').value),
+      category: document.getElementById('txCategory').value,
+      wallet: document.getElementById('txWallet').value,
+      description: document.getElementById('txDesc').value,
+    };
+    const d = document.getElementById('txDate').value;
+    if (d) body.date = new Date(d).toISOString();
+    const url = id ? '/api/transactions/' + id : '/api/transactions';
+    const method = id ? 'PUT' : 'POST';
+    const res = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body), credentials:'same-origin'});
+    const data = await res.json();
+    if (data.success) {
+      bootstrap.Modal.getInstance(document.getElementById('txModal')).hide();
+      loadTx();
+    } else {
+      alert(data.error?.message || 'Gagal menyimpan');
+    }
+  });
+
+  loadMeta().then(loadTx);
+</script>
+</body>
+</html>

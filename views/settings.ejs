@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<script src="/assets/static/js/initTheme.js"></script>
+<div id="app">
+  <div id="sidebar" class="active"><%- include('partials/sidebar') %></div>
+  <div id="main">
+    <%- include('partials/navbar') %>
+    <div class="page-heading"><h3>Pengaturan</h3></div>
+    <div class="page-content">
+      <div class="card mb-3">
+        <div class="card-header"><h4>Domain Web (Owner)</h4></div>
+        <div class="card-body">
+          <p class="text-muted">Atur domain publik dashboard (contoh: <code>https://catataja.id</code>). Digunakan untuk CORS dan akses web di VPS. Hanya owner yang bisa mengubah.</p>
+          <form id="domainForm" class="row g-2 align-items-end">
+            <div class="col-md-8">
+              <label class="form-label">Domain</label>
+              <input type="text" id="domainInput" class="form-control" placeholder="https://domain-anda.com" />
+            </div>
+            <div class="col-md-4">
+              <button type="submit" class="btn btn-primary">Simpan Domain</button>
+            </div>
+          </form>
+          <div id="domainStatus" class="mt-2 text-muted small"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <p class="text-muted">Konfigurasi bot dibaca dari file <code>.env</code>. Ubah nilai di server lalu restart bot. Dashboard ini tidak mengubah .env secara langsung (keamanan).</p>
+          <p>Gunakan perintah <code>!reload</code> di WhatsApp untuk memuat ulang konfigurasi Gemini.</p>
+        </div>
+      </div>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+<script src="/assets/static/js/components/dark.js"></script>
+<script src="/assets/extensions/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+  async function loadDomain() {
+    const res = await fetch('/api/settings', { credentials: 'same-origin' });
+    const data = await res.json();
+    if (data.success) document.getElementById('domainInput').value = data.data.domain || '';
+  }
+  document.getElementById('domainForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const domain = document.getElementById('domainInput').value.trim();
+    const status = document.getElementById('domainStatus');
+    status.textContent = 'Menyimpan...';
+    const res = await fetch('/api/settings', {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      status.textContent = 'Tersimpan: ' + (data.data.domain || '(kosong)');
+      status.className = 'mt-2 text-success small';
+    } else {
+      status.textContent = data.error?.message || 'Gagal menyimpan';
+      status.className = 'mt-2 text-danger small';
+    }
+  });
+  loadDomain();
+</script>
+</body>
+</html>
