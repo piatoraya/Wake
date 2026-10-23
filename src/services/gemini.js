@@ -103,6 +103,107 @@ function getModels() {
   return list.length ? list : [DEFAULT_MODEL];
 }
 
+/* -------------------------------------------------------------------------
+ *  9router (OpenAI-compatible) — fallback kedua setelah Gemini habis limit.
+ *  Dikonfigurasi via .env: NINE_ROUTER_BASE_URL, NINE_ROUTER_API_KEY,
+ *  NINE_ROUTER_MODEL / NINE_ROUTER_MODELS.
+ * ---------------------------------------------------------------------- */
+
+function getNineRouterBaseUrl() {
+  return String(process.env.NINE_ROUTER_BASE_URL || '').trim().replace(/\/+$/, '');
+}
+
+function getNineRouterApiKey() {
+  return String(process.env.NINE_ROUTER_API_KEY || '').trim();
+}
+
+function getNineRouterModels() {
+  const raw = process.env.NINE_ROUTER_MODELS || process.env.NINE_ROUTER_MODEL || '';
+  const list = String(raw)
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
+  return list;
+}
+
+function isNineRouterEnabled() {
+  return Boolean(getNineRouterBaseUrl() && getNineRouterApiKey() && getNineRouterModels().length);
+}
+
+function partsToOpenAIContent(parts) {
+  const content = [];
+  for (const p of parts || []) {
+    if (p && p.text) {
+      content.push({ type: 'text', text: String(p.text) });
+    } else if (p && p.inlineData) {
+      const mime = String(p.inlineData.mimeType || 'application/octet-stream').split(';')[0].trim();
+      const data = p.inlineData.data;
+      if (mime.startsWith('image/')) {
+        content.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${data}` } });
+      } else if (mime.startsWith('audio/')) {
+        let format = mime.split('/')[1] || 'wav';
+        if (format === 'ogg') format = 'opus';
+        content.push({ type: 'input_audio', input_audio: { data, format } });
+      } else {
+        content.push({ type: 'text', text: `[media tidak didukung: ${mime}]` });
+      }
+    }
+  }
+  if (!content.length) content.push({ type: 'text', text: '' });
+  return content;
+}
+
+async function callNineRouter(parts, instruction, timeZone, options = {}) {
+  const baseUrl = getNineRouterBaseUrl();
+  const apiKey = getNineRouterApiKey();
+  const models = getNineRouterModels();
+  if (!baseUrl || !apiKey || !models.length) return null;
+
+  const system = buildSystemInstruction(instruction, timeZone);
+  const content = partsToOpenAIContent(parts);
+  const expectJson = options.expectJson !== false;
+  const temperature = options.temperature ?? (expectJson ? 0.1 : 0.4);
+  const maxTokens = options.maxOutputTokens ?? (expectJson ? 1024 : 4096);
+
+  let lastErr = null;
+  for (const model of models) {
+    try {
+      const body = {
+        model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content },
+        ],
+        temperature,
+        max_tokens: maxTokens,
+      };
+      if (expectJson) body.response_format = { type: 'json_object' };
+
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`HTTP ${res.status}: ${txt.slice(0, 200)}`);
+      }
+      const json = await res.json();
+      const text = json?.choices?.[0]?.message?.content;
+      if (!text || !String(text).trim()) throw new Error('respons kosong');
+      return String(text);
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[9router] ${model} gagal:`, err?.message || err);
+    }
+  }
+  throw lastErr || new Error('9router: semua model gagal');
+}
+
 /**
  * Pasangan (model, apiKey) yang kehabisan kuota -> dicatat supaya request
  * berikutnya langsung melompat ke pasangan lain.
@@ -642,6 +743,17 @@ async function generateJSON(parts, schema = RESPONSE_SCHEMA, instruction = SYSTE
           throw err;
         }
       }
+    }
+  }
+
+  // Fallback ke 9router (OpenAI-compatible) bila Gemini habis limit / gagal semua.
+  if (isNineRouterEnabled()) {
+    try {
+      console.warn('[9router] Gemini gagal/habis limit, mencoba 9router...');
+      const text = await callNineRouter(parts, instruction, timeZone, options);
+      if (text && String(text).trim()) return text;
+    } catch (err) {
+      console.warn('[9router] gagal:', err?.message || err);
     }
   }
 
