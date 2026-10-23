@@ -2249,19 +2249,24 @@ async function startWhatsApp() {
         console.error('');
         console.error('==================================================');
         console.error('  SESI LOGOUT (401) — sesi dicabut WhatsApp.');
-        console.error('==================================================');
-        console.error(`  1. Hentikan bot ini.`);
-        console.error(`  2. Hapus folder sesi:  rm -rf ${CONFIG.sessionDir}`);
-        console.error('  3. Jalankan ulang:     npm start');
-        console.error('  4. Lakukan pairing/QR baru (jangan scan dari HP yang sama');
-        console.error('     dengan sesi yang masih aktif di tempat lain).');
-        console.error('==================================================\n');
-        // Jangan hanya exit: matikan socket dulu agar tidak ada event lanjutan.
+        console.error('  Menghapus isi folder auth lama secara otomatis...');
         try {
           await sock?.end?.();
         } catch {
           /* abaikan */
         }
+        try {
+          await fs.rm(path.resolve(CONFIG.sessionDir), { recursive: true, force: true });
+          await fs.mkdir(path.resolve(CONFIG.sessionDir), { recursive: true });
+          console.error(`  ✅ Folder auth dibersihkan: ${CONFIG.sessionDir}`);
+        } catch (err) {
+          console.error('  ⚠️ Gagal menghapus folder auth:', err?.message || err);
+          console.error(`  Hapus manual: rm -rf ${CONFIG.sessionDir}`);
+        }
+        console.error('  Jalankan ulang:     npm start');
+        console.error('  Lakukan pairing/QR baru (jangan scan dari HP yang sama');
+        console.error('  dengan sesi yang masih aktif di tempat lain).');
+        console.error('==================================================\n');
         process.exit(1);
         return;
       }
