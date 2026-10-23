@@ -22,11 +22,15 @@
               <label class="form-label">Nama Bot</label>
               <input type="text" id="botName" class="form-control" placeholder="bot_toko_budi">
             </div>
-            <div class="col-md-3">
-              <label class="form-label">Nomor Bot (untuk pairing)</label>
+            <div class="col-md-2">
+              <label class="form-label">Nomor Bot (pairing)</label>
               <input type="text" id="botPhone" class="form-control" placeholder="628...">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+              <label class="form-label">Metode</label>
+              <select id="botMethod" class="form-select"><option value="pairing">Pairing Code</option><option value="qr">QR Code</option></select>
+            </div>
+            <div class="col-md-2">
               <button type="submit" class="btn btn-primary">Buat Instance</button>
             </div>
           </form>
@@ -41,12 +45,20 @@
           </table>
         </div>
       </div>
+      <div class="card mt-3">
+        <div class="card-header"><h4>QR Code</h4></div>
+        <div class="card-body text-center">
+          <div id="qrBox" style="display:inline-block;"></div>
+          <div id="qrStatus" class="mt-2 small text-muted"></div>
+        </div>
+      </div>
     </div>
     <%- include('partials/footer') %>
   </div>
 </div>
 <script src="/assets/static/js/components/dark.js"></script>
 <script src="/assets/extensions/perfect-scrollbar/perfect-scrollbar.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/assets/compiled/js/app.js"></script>
 <script>
   async function loadInstances() {
@@ -62,8 +74,9 @@
         <td><code>${i.session_dir}</code></td>
         <td>${i.status}${i.pairing_code ? ' (kode: '+i.pairing_code+')' : ''}</td>
         <td>
-          <button class="btn btn-sm btn-outline-success" onclick="startInst('${i.bot_id}')">Start</button>
-          <button class="btn btn-sm btn-outline-primary" onclick="pairInst('${i.bot_id}')">Pairing</button>
+          <button class="btn btn-sm btn-outline-success" onclick="startInst('${i.bot_id}','${i.connection_method||'pairing'}')">Start</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="pairInst('${i.bot_id}')">Pairing Code</button>
+          <button class="btn btn-sm btn-outline-info" onclick="showQr('${i.bot_id}')">QR</button>
           <button class="btn btn-sm btn-outline-secondary" onclick="stopInst('${i.bot_id}')">Stop</button>
           <button class="btn btn-sm btn-outline-danger" onclick="delInstance('${i.bot_id}')">Hapus</button>
         </td>
@@ -77,17 +90,42 @@
     const res = await fetch('/api/bot-instances', {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ owner_phone: document.getElementById('ownerPhone').value.trim(), name: document.getElementById('botName').value.trim(), phone: document.getElementById('botPhone').value.trim() }),
+      body: JSON.stringify({ owner_phone: document.getElementById('ownerPhone').value.trim(), name: document.getElementById('botName').value.trim(), phone: document.getElementById('botPhone').value.trim(), method: document.getElementById('botMethod').value }),
     });
     const data = await res.json();
     if (data.success) { status.textContent = 'Instance dibuat.'; status.className='mt-2 small text-success'; loadInstances(); }
     else { status.textContent = data.error?.message || 'Gagal'; status.className='mt-2 small text-danger'; }
   });
-  async function startInst(id) {
-    const res = await fetch('/api/bot-instances/'+id+'/start', { method: 'POST', credentials: 'same-origin' });
+  async function startInst(id, method) {
+    const res = await fetch('/api/bot-instances/'+id+'/start', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method }) });
     const data = await res.json();
     if (!data.success) alert(data.error?.message || 'Gagal start');
     loadInstances();
+  }
+  async function showQr(id) {
+    const status = document.getElementById('qrStatus');
+    const box = document.getElementById('qrBox');
+    box.innerHTML = '';
+    status.textContent = 'Mengambil QR...';
+    // ensure started in qr mode
+    await fetch('/api/bot-instances/'+id+'/start', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: 'qr' }) });
+    // poll for qr
+    let attempts = 0;
+    const timer = setInterval(async () => {
+      attempts++;
+      const res = await fetch('/api/bot-instances/'+id+'/qr', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.success && data.data.qr) {
+        clearInterval(timer);
+        box.innerHTML = '';
+        new QRCode(box, { text: data.data.qr, width: 220, height: 220 });
+        status.textContent = 'Pindai QR ini dengan WhatsApp.';
+        loadInstances();
+      } else if (attempts > 20) {
+        clearInterval(timer);
+        status.textContent = 'QR belum tersedia. Coba lagi.';
+      }
+    }, 1500);
   }
   async function pairInst(id) {
     const res = await fetch('/api/bot-instances/'+id+'/pairing-code', { method: 'POST', credentials: 'same-origin' });

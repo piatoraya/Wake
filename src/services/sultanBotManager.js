@@ -70,7 +70,7 @@ export async function getInstance(botId) {
   return all.find((i) => i.bot_id === botId) || null;
 }
 
-export async function createInstance(ownerPhone, name, phone = '') {
+export async function createInstance(ownerPhone, name, phone = '', method = 'pairing') {
   const user = await getUser(ownerPhone);
   if (!user) throw new Error('User tidak ditemukan');
   const check = canCreateBotInstance(user);
@@ -91,6 +91,7 @@ export async function createInstance(ownerPhone, name, phone = '') {
     slug,
     session_dir: sessionDir,
     phone: String(phone || '').trim(),
+    connection_method: method === 'qr' ? 'qr' : 'pairing',
     status: 'provisioned',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -127,10 +128,18 @@ export async function deleteInstance(ownerPhone, botId, isAdmin = false) {
   return inst;
 }
 
-export async function startInstance(botId) {
+export async function startInstance(botId, method = null) {
   const inst = await getInstance(botId);
   if (!inst) throw new Error('Instance tidak ditemukan');
-  if (sockets.has(botId)) return { botId, status: 'already_running' };
+
+  const chosenMethod = method || inst.connection_method || process.env.CONNECTION_METHOD || 'pairing';
+  if (sockets.has(botId)) {
+    const e = sockets.get(botId);
+    if (e.method === chosenMethod) return { botId, status: 'already_running', method: chosenMethod };
+    await stopInstance(botId);
+  }
+
+  await updateInstance(botId, { connection_method: chosenMethod, status: 'connecting', pairing_code: null, last_qr: null });
 
   const sessionDir = path.resolve(inst.session_dir);
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
@@ -146,13 +155,18 @@ export async function startInstance(botId) {
 
   sock.ev.on('creds.update', saveCreds);
 
-  const entry = { sock, phone: inst.phone, registered: Boolean(state.creds?.me?.id && state.creds?.account) };
+  const entry = { sock, phone: inst.phone, registered: Boolean(state.creds?.me?.id && state.creds?.account), method: chosenMethod, lastQr: null };
   sockets.set(botId, entry);
 
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, isNewLogin } = update;
+    const { connection, lastDisconnect, isNewLogin, qr } = update;
     const e = sockets.get(botId);
     if (!e) return;
+
+    if (qr && e.method === 'qr' && !e.registered) {
+      e.lastQr = qr;
+      await updateInstance(botId, { status: 'waiting_qr', last_qr: qr });
+    }
 
     if (isNewLogin) {
       await updateInstance(botId, { status: 'reconnecting' });
@@ -188,8 +202,8 @@ export async function startInstance(botId) {
 
   await updateInstance(botId, { status: entry.registered ? 'connected' : 'connecting' });
 
-  // pairing code auto-request if not registered
-  if (!entry.registered) {
+  // pairing code auto-request if not registered and method = pairing
+  if (!entry.registered && chosenMethod === 'pairing') {
     const phone = entry.phone || inst.phone;
     if (phone) {
       setTimeout(async () => {
@@ -247,4 +261,12 @@ export async function requestPairingCode(botId) {
 
 export function isRunning(botId) {
   return sockets.has(botId);
+}
+
+export function getQr(botId) {
+  return sockets.get(botId)?.lastQr || null;
+}
+
+export function getInstanceMethod(botId) {
+  return sockets.get(botId)?.method || null;
 }

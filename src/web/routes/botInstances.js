@@ -12,6 +12,7 @@ import {
   requestPairingCode,
   isRunning,
   updateInstancePhone,
+  getQr,
 } from '../../services/sultanBotManager.js';
 
 const router = Router();
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { owner_phone, name, phone } = req.body || {};
+    const { owner_phone, name, phone, method } = req.body || {};
     if (!owner_phone || !name) {
       return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'owner_phone dan name wajib' } });
     }
@@ -38,7 +39,7 @@ router.post('/', async (req, res) => {
     if (req.user.role !== 'owner' && req.user.role !== 'admin') {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Akses ditolak' } });
     }
-    const meta = await createInstance(owner_phone, name, phone);
+    const meta = await createInstance(owner_phone, name, phone, method);
     await addAuditLog({ adminId: req.user.sub, action: 'create', entity: 'bot_instance', entityId: meta.bot_id, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: meta });
   } catch (e) {
@@ -48,8 +49,19 @@ router.post('/', async (req, res) => {
 
 router.post('/:id/start', async (req, res) => {
   try {
-    const result = await startInstance(req.params.id);
+    const { method } = req.body || {};
+    const result = await startInstance(req.params.id, method);
     res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
+  }
+});
+
+router.get('/:id/qr', async (req, res) => {
+  try {
+    const qr = getQr(req.params.id);
+    if (!qr) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'QR belum tersedia' } });
+    res.json({ success: true, data: { qr } });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
   }
