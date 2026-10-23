@@ -2446,7 +2446,7 @@ function checkForUpdates() {
 
   // cek update remote (dengan timeout, gagal diam-diam)
   try {
-    execSync('git fetch origin main --quiet', { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] });
+    execSync('git fetch origin main --quiet', { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
     const local = execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const remote = execSync('git rev-parse origin/main', { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     if (local && remote && local !== remote) {
