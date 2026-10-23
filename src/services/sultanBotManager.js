@@ -226,6 +226,19 @@ export async function startInstance(botId, method = null) {
   return { botId, status: entry.registered ? 'connected' : 'connecting' };
 }
 
+export async function resetAuth(botId) {
+  await stopInstance(botId);
+  const inst = await getInstance(botId);
+  if (!inst) throw new Error('Instance tidak ditemukan');
+  const dir = path.resolve(inst.session_dir);
+  try {
+    await fs.rm(dir, { recursive: true, force: true });
+  } catch { /* ignore */ }
+  await fs.mkdir(dir, { recursive: true });
+  await updateInstance(botId, { status: 'provisioned', pairing_code: null, last_qr: null, last_error: null });
+  return { botId, status: 'provisioned' };
+}
+
 export async function stopInstance(botId) {
   const entry = sockets.get(botId);
   if (entry?.sock) {

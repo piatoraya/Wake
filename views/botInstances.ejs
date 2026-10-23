@@ -78,6 +78,7 @@
           <button class="btn btn-sm btn-outline-primary" onclick="pairInst('${i.bot_id}')">Pairing Code</button>
           <button class="btn btn-sm btn-outline-info" onclick="showQr('${i.bot_id}')">QR</button>
           <button class="btn btn-sm btn-outline-secondary" onclick="stopInst('${i.bot_id}')">Stop</button>
+          <button class="btn btn-sm btn-outline-warning" onclick="resetAuth('${i.bot_id}')">Reset Auth</button>
           <button class="btn btn-sm btn-outline-danger" onclick="delInstance('${i.bot_id}')">Hapus</button>
         </td>
       </tr>
@@ -132,6 +133,13 @@
     const data = await res.json();
     if (data.success) { alert('Kode pairing: ' + (data.data.code || 'sudah terhubung')); loadInstances(); }
     else alert(data.error?.message || 'Gagal pairing');
+  }
+  async function resetAuth(id) {
+    if (!confirm('Hapus auth lama dan reset instance?')) return;
+    const res = await fetch('/api/bot-instances/'+id+'/reset-auth', { method: 'POST', credentials: 'same-origin' });
+    const data = await res.json();
+    if (!data.success) alert(data.error?.message || 'Gagal reset auth');
+    loadInstances();
   }
   async function stopInst(id) {
     const res = await fetch('/api/bot-instances/'+id+'/stop', { method: 'POST', credentials: 'same-origin' });

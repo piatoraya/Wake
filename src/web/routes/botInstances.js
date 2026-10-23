@@ -13,6 +13,7 @@ import {
   isRunning,
   updateInstancePhone,
   getQr,
+  resetAuth,
 } from '../../services/sultanBotManager.js';
 
 const router = Router();
@@ -70,6 +71,15 @@ router.get('/:id/qr', async (req, res) => {
 router.post('/:id/pairing-code', async (req, res) => {
   try {
     const result = await requestPairingCode(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
+  }
+});
+
+router.post('/:id/reset-auth', requireRole('owner'), async (req, res) => {
+  try {
+    const result = await resetAuth(req.params.id);
     res.json({ success: true, data: result });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
