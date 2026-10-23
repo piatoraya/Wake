@@ -507,6 +507,33 @@ const HELP_TEXT = (prefix) =>
     '💡 Contoh: _"minggu ini habis berapa buat makan?"_',
   ].join('\n');
 
+const OWNER_MENU_TEXT = (prefix) =>
+  [
+    '👑 *MENU OWNER*',
+    '',
+    '🤖 *AI & Konfigurasi*',
+    `   • ${prefix}ai / ${prefix}status / ${prefix}gemini — status AI & API key`,
+    `   • ${prefix}addapi <key> — tambah API key Gemini`,
+    `   • ${prefix}reload — muat ulang .env`,
+    '',
+    '👥 *Manajemen User*',
+    `   • ${prefix}setlevel <nomor> <tier> [hari] — ubah level user`,
+    `   • ${prefix}setbotlimit <nomor> <limit> — ubah limit bot Sultan`,
+    `   • ${prefix}quota — lihat kuota Anda`,
+    `   • ${prefix}reset — hapus semua data user (konfirmasi)`,
+    '',
+    '📊 *Laporan & Backup*',
+    `   • ${prefix}rekap [YYYY-MM] — laporan bulanan`,
+    `   • ${prefix}analisis [YYYY-MM] — analisis AI`,
+    `   • ${prefix}backup [excel|pdf|json] [YYYY-MM] — backup data`,
+    `   • ${prefix}saldo / ${prefix}wallet — saldo wallet`,
+    '',
+    '⚙️ *Lainnya*',
+    `   • ${prefix}setzonawaktu — set zona waktu`,
+    `   • ${prefix}help — menu umum`,
+    '',
+    '_Khusus owner/admin bot._',
+  ].join('\n');
 /* ==========================================================================
  *  PERINTAH / COMMAND HANDLER
  * ========================================================================== */
@@ -524,9 +551,19 @@ async function handleCommand(prefix, rawText, ctx) {
   const reply = (text) => sock.sendMessage(jid, { text: `${text}\n\nby: ampang dev` }, { quoted: msg });
 
   switch (cmd) {
+    /* -------------------------------------------------------- owner menu */
+    case 'menu':
+    case 'ownermenu': {
+      if (owner && phone !== owner) {
+        await reply('❌ Fitur ini khusus owner.');
+        return true;
+      }
+      await reply(OWNER_MENU_TEXT(prefix));
+      return true;
+    }
+
     /* ---------------------------------------------------------------- help */
     case 'help':
-    case 'menu':
     case 'start':
       await reply(HELP_TEXT(prefix));
       return true;
