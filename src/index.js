@@ -17,6 +17,7 @@ import 'dotenv/config';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { rmSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import readline from 'node:readline/promises';
 
@@ -2425,6 +2426,33 @@ async function startWhatsApp() {
  *  BOOTSTRAP
  * ========================================================================== */
 
+/**
+ * Cek pembaruan kode di GitHub (non-blocking, best effort).
+ * Menampilkan pesan di terminal bila ada commit baru atau perubahan lokal.
+ */
+function checkForUpdates() {
+  try {
+    // cek perubahan lokal
+    const dirty = execSync('git status --porcelain', { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (dirty) {
+      console.log('\\n⚠️  [UPDATE] Ada perubahan lokal yang belum di-commit.');
+    }
+  } catch { /* bukan git repo / git tidak ada */ }
+
+  // cek update remote (dengan timeout, gagal diam-diam)
+  try {
+    execSync('git fetch origin main --quiet', { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] });
+    const local = execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const remote = execSync('git rev-parse origin/main', { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (local && remote && local !== remote) {
+      console.log('\\n⚠️  [UPDATE] Ada pembaruan kode di GitHub (origin/main).');
+      console.log('   Jalankan: git pull  (lalu restart bot bila perlu)');
+    } else {
+      console.log('\\n✅ [UPDATE] Kode lokal sudah up-to-date dengan GitHub.');
+    }
+  } catch { /* offline / remote tidak ada / timeout */ }
+}
+
 async function bootstrap() {
   console.log('\n🚀 WhatsApp Bot Pencatat Keuangan — starting...');
   console.log('   Metode koneksi: dipilih di terminal (Pairing Code / QR Code)\n');
@@ -2576,6 +2604,9 @@ async function bootstrap() {
       console.error('[WEB] Gagal menjalankan dashboard:', e?.message);
     }
   }
+
+  // Cek pembaruan kode (non-blocking)
+  setTimeout(() => checkForUpdates(), 5000);
 
   // 7. Koneksi WhatsApp (pairing code ATAU QR, sesuai pilihan di atas)
   await startWhatsApp();
