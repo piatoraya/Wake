@@ -146,10 +146,22 @@
     }, 1500);
   }
   async function pairInst(id) {
-    const res = await fetch('/api/bot-instances/'+id+'/pairing-code', { method: 'POST', credentials: 'same-origin' });
-    const data = await res.json();
-    if (data.success) { alert('Kode pairing: ' + (data.data.code || 'sudah terhubung')); loadInstances(); }
-    else alert(data.error?.message || 'Gagal pairing');
+    try {
+      const res = await fetch('/api/bot-instances/'+id+'/pairing-code', { method: 'POST', credentials: 'same-origin' });
+      const data = await res.json();
+      if (!data.success && /Nomor bot belum diisi/i.test(data.error?.message || '')) {
+        const phone = prompt('Masukkan nomor bot (628...):');
+        if (phone) {
+          await fetch('/api/bot-instances/'+id, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone.trim() }) });
+          return pairInst(id);
+        }
+      }
+      if (data.success) { alert('Kode pairing: ' + (data.data.code || 'sudah terhubung')); loadInstances(); }
+      else alert(data.error?.message || 'Gagal pairing');
+    } catch (e) {
+      console.error(e);
+      alert('Error: ' + (e && e.message ? e.message : e));
+    }
   }
   async function resetAuth(id) {
     if (!confirm('Hapus auth lama dan reset instance?')) return;
