@@ -2476,9 +2476,27 @@ async function bootstrap() {
         } catch {
           await fs.rename(oldPath, newPath);
           console.log(`[MIGRATE] ${name} -> sessions/${name}`);
+          // perbarui CONFIG bila sessionDir menunjuk ke path lama
+          if (path.resolve(CONFIG.sessionDir) === oldPath) {
+            CONFIG.sessionDir = path.resolve('sessions', name);
+            console.log(`[MIGRATE] SESSION_DIR diperbarui -> ${CONFIG.sessionDir}`);
+          }
         }
       }
     }
+  // fallback: bila SESSION_DIR lama tidak ada tapi versi sessions/ ada, pakai yang baru
+  try {
+    await fs.access(path.resolve(CONFIG.sessionDir));
+  } catch {
+    const base = path.basename(CONFIG.sessionDir);
+    const alt = path.resolve('sessions', base);
+    try {
+      await fs.access(alt);
+      CONFIG.sessionDir = alt;
+      console.log(`[MIGRATE] SESSION_DIR dialihkan ke ${alt}`);
+    } catch { /* tidak ada */ }
+  }
+
   } catch (err) {
     console.warn('[MIGRATE] Gagal migrasi folder auth:', err?.message || err);
   }
