@@ -82,7 +82,7 @@ export async function createInstance(ownerPhone, name, phone = '', method = 'pai
   const all = await listInstances();
   if (all.some((i) => i.slug === slug)) throw new Error('Nama bot sudah dipakai');
 
-  const sessionDir = `baileys_auth_${slug}`;
+  const sessionDir = path.join('sessions', `baileys_auth_${slug}`);
   await fs.mkdir(path.resolve(sessionDir), { recursive: true });
 
   const meta = {

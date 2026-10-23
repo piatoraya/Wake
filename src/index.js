@@ -73,7 +73,7 @@ import {
  * ========================================================================== */
 const CONFIG = {
   botNumber: (process.env.BOT_NUMBER || '').replace(/\D/g, ''),
-  sessionDir: process.env.SESSION_DIR || './baileys_auth',
+  sessionDir: process.env.SESSION_DIR || './sessions/baileys_auth',
   dataDir: process.env.DATA_DIR || './data',
   timezone: process.env.TIMEZONE || 'Asia/Jakarta',
   /**
@@ -2432,6 +2432,27 @@ async function bootstrap() {
   // 1. Validasi .env penting
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.includes('XXXX')) {
     console.warn('⚠️  GEMINI_API_KEY belum diisi — parsing AI tidak akan berfungsi.');
+  }
+
+  // 1b. Migrasi folder auth lama (baileys_auth*) ke ./sessions/ (agar rapi)
+  try {
+    const sessionsDir = path.resolve('./sessions');
+    await fs.mkdir(sessionsDir, { recursive: true });
+    const rootEntries = await fs.readdir(path.resolve('.'));
+    for (const name of rootEntries) {
+      if (name === 'baileys_auth' || name.startsWith('baileys_auth_')) {
+        const oldPath = path.resolve(name);
+        const newPath = path.resolve('sessions', name);
+        try {
+          await fs.access(newPath);
+        } catch {
+          await fs.rename(oldPath, newPath);
+          console.log(`[MIGRATE] ${name} -> sessions/${name}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[MIGRATE] Gagal migrasi folder auth:', err?.message || err);
   }
 
   // 2. Pastikan struktur folder & file JSON utama sudah ada
