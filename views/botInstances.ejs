@@ -14,15 +14,19 @@
       <div class="card mb-3">
         <div class="card-body">
           <form id="createForm" class="row g-2 align-items-end">
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Owner Phone</label>
               <input type="text" id="ownerPhone" class="form-control" placeholder="628...">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Nama Bot</label>
               <input type="text" id="botName" class="form-control" placeholder="bot_toko_budi">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
+              <label class="form-label">Nomor Bot (untuk pairing)</label>
+              <input type="text" id="botPhone" class="form-control" placeholder="628...">
+            </div>
+            <div class="col-md-3">
               <button type="submit" class="btn btn-primary">Buat Instance</button>
             </div>
           </form>
@@ -54,9 +58,15 @@
         <td>${i.name}</td>
         <td>${i.owner_phone}</td>
         <td>${i.slug}</td>
+        <td>${i.phone||'-'}</td>
         <td><code>${i.session_dir}</code></td>
-        <td>${i.status}</td>
-        <td><button class="btn btn-sm btn-outline-danger" onclick="delInstance('${i.bot_id}')">Hapus</button></td>
+        <td>${i.status}${i.pairing_code ? ' (kode: '+i.pairing_code+')' : ''}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-success" onclick="startInst('${i.bot_id}')">Start</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="pairInst('${i.bot_id}')">Pairing</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="stopInst('${i.bot_id}')">Stop</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="delInstance('${i.bot_id}')">Hapus</button>
+        </td>
       </tr>
     `).join('');
   }
@@ -67,12 +77,30 @@
     const res = await fetch('/api/bot-instances', {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ owner_phone: document.getElementById('ownerPhone').value.trim(), name: document.getElementById('botName').value.trim() }),
+      body: JSON.stringify({ owner_phone: document.getElementById('ownerPhone').value.trim(), name: document.getElementById('botName').value.trim(), phone: document.getElementById('botPhone').value.trim() }),
     });
     const data = await res.json();
     if (data.success) { status.textContent = 'Instance dibuat.'; status.className='mt-2 small text-success'; loadInstances(); }
     else { status.textContent = data.error?.message || 'Gagal'; status.className='mt-2 small text-danger'; }
   });
+  async function startInst(id) {
+    const res = await fetch('/api/bot-instances/'+id+'/start', { method: 'POST', credentials: 'same-origin' });
+    const data = await res.json();
+    if (!data.success) alert(data.error?.message || 'Gagal start');
+    loadInstances();
+  }
+  async function pairInst(id) {
+    const res = await fetch('/api/bot-instances/'+id+'/pairing-code', { method: 'POST', credentials: 'same-origin' });
+    const data = await res.json();
+    if (data.success) { alert('Kode pairing: ' + (data.data.code || 'sudah terhubung')); loadInstances(); }
+    else alert(data.error?.message || 'Gagal pairing');
+  }
+  async function stopInst(id) {
+    const res = await fetch('/api/bot-instances/'+id+'/stop', { method: 'POST', credentials: 'same-origin' });
+    const data = await res.json();
+    if (!data.success) alert(data.error?.message || 'Gagal stop');
+    loadInstances();
+  }
   async function delInstance(id) {
     if (!confirm('Hapus instance ini?')) return;
     const res = await fetch('/api/bot-instances/'+id, { method: 'DELETE', credentials: 'same-origin' });

@@ -7,6 +7,11 @@ import {
   createInstance,
   getInstance,
   deleteInstance,
+  startInstance,
+  stopInstance,
+  requestPairingCode,
+  isRunning,
+  updateInstancePhone,
 } from '../../services/sultanBotManager.js';
 
 const router = Router();
@@ -25,7 +30,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { owner_phone, name } = req.body || {};
+    const { owner_phone, name, phone } = req.body || {};
     if (!owner_phone || !name) {
       return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'owner_phone dan name wajib' } });
     }
@@ -33,9 +38,46 @@ router.post('/', async (req, res) => {
     if (req.user.role !== 'owner' && req.user.role !== 'admin') {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Akses ditolak' } });
     }
-    const meta = await createInstance(owner_phone, name);
+    const meta = await createInstance(owner_phone, name, phone);
     await addAuditLog({ adminId: req.user.sub, action: 'create', entity: 'bot_instance', entityId: meta.bot_id, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: meta });
+  } catch (e) {
+    res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
+  }
+});
+
+router.post('/:id/start', async (req, res) => {
+  try {
+    const result = await startInstance(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
+  }
+});
+
+router.post('/:id/pairing-code', async (req, res) => {
+  try {
+    const result = await requestPairingCode(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
+  }
+});
+
+router.post('/:id/stop', async (req, res) => {
+  try {
+    const result = await stopInstance(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
+  }
+});
+
+router.put('/:id', async (req, res) => {
+  try {
+    const { phone } = req.body || {};
+    const updated = await updateInstancePhone(req.params.id, phone);
+    res.json({ success: true, data: updated });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
   }

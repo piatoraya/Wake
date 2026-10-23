@@ -1,8 +1,30 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import pino from 'pino';
+import makeWASocket, {
+  useMultiFileAuthState,
+  DisconnectReason,
+  Browsers,
+} from '@whiskeysockets/baileys';
 import { getUser, listUsers, withCollection } from '../config/database.js';
 import { canCreateBotInstance } from './quota.js';
+
+const sockets = new Map(); // botId -> { sock, phone, registered }
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+function parseVersion() {
+  const v = process.env.WA_VERSION || '2,3000,1045101284';
+  const arr = v.split(',').map((n) => Number(n.trim()));
+  return arr.length === 3 && arr.every(Number.isFinite) ? arr : [2, 3000, 1045101284];
+}
+
+function parseBrowser() {
+  const b = process.env.WA_BROWSER || 'Mac OS,Chrome,139.0.7258.164';
+  const arr = b.split(',');
+  return arr.length === 3 ? arr : Browsers.macOS('Chrome');
+}
 
 function slugify(name) {
   return String(name || '')
@@ -13,19 +35,42 @@ function slugify(name) {
     .slice(0, 40);
 }
 
+async function updateInstance(botId, patch) {
+  await withCollection('users', (users) => {
+    for (const u of users) {
+      const inst = (u.active_bot_instances || []).find((i) => i.bot_id === botId);
+      if (inst) {
+        Object.assign(inst, patch, { updated_at: new Date().toISOString() });
+        return;
+      }
+    }
+  });
+}
+
 export async function listInstances(ownerPhone = null) {
   const users = await listUsers();
   const out = [];
   for (const u of users) {
     if (ownerPhone && u.phone !== ownerPhone) continue;
     for (const inst of u.active_bot_instances || []) {
-      out.push({ ...inst, owner_phone: u.phone, owner_name: u.name });
+      out.push({ ...inst, owner_phone: u.phone, owner_name: u.name, running: sockets.has(inst.bot_id) });
     }
   }
   return out;
 }
 
-export async function createInstance(ownerPhone, name) {
+export async function updateInstancePhone(botId, phone) {
+  await updateInstance(botId, { phone: String(phone || '').trim() });
+  const inst = await getInstance(botId);
+  return inst;
+}
+
+export async function getInstance(botId) {
+  const all = await listInstances();
+  return all.find((i) => i.bot_id === botId) || null;
+}
+
+export async function createInstance(ownerPhone, name, phone = '') {
   const user = await getUser(ownerPhone);
   if (!user) throw new Error('User tidak ditemukan');
   const check = canCreateBotInstance(user);
@@ -45,7 +90,7 @@ export async function createInstance(ownerPhone, name) {
     name: name.trim(),
     slug,
     session_dir: sessionDir,
-    phone: '',
+    phone: String(phone || '').trim(),
     status: 'provisioned',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -62,33 +107,144 @@ export async function createInstance(ownerPhone, name) {
   return meta;
 }
 
-export async function getInstance(botId) {
-  const all = await listInstances();
-  return all.find((i) => i.bot_id === botId) || null;
-}
-
 export async function deleteInstance(ownerPhone, botId, isAdmin = false) {
-  let targetUser = null;
-  let instance = null;
-  const users = await listUsers();
-  for (const u of users) {
-    const inst = (u.active_bot_instances || []).find((i) => i.bot_id === botId);
-    if (inst) { targetUser = u; instance = inst; break; }
-  }
-  if (!instance) throw new Error('Instance tidak ditemukan');
-  if (!isAdmin && targetUser.phone !== ownerPhone) throw new Error('Tidak berhak menghapus instance ini');
+  const inst = await getInstance(botId);
+  if (!inst) throw new Error('Instance tidak ditemukan');
+  if (!isAdmin && inst.owner_phone !== ownerPhone) throw new Error('Tidak berhak menghapus instance ini');
 
-  await withCollection('users', (list) => {
-    const u = list.find((x) => x.phone === targetUser.phone);
+  await stopInstance(botId);
+  await withCollection('users', (users) => {
+    const u = users.find((x) => x.phone === inst.owner_phone);
     if (!u) return;
     u.active_bot_instances = (u.active_bot_instances || []).filter((i) => i.bot_id !== botId);
     u.updated_at = new Date().toISOString();
   });
 
-  // hapus folder sesi (best effort)
   try {
-    await fs.rm(path.resolve(instance.session_dir), { recursive: true, force: true });
+    await fs.rm(path.resolve(inst.session_dir), { recursive: true, force: true });
   } catch { /* ignore */ }
 
-  return instance;
+  return inst;
+}
+
+export async function startInstance(botId) {
+  const inst = await getInstance(botId);
+  if (!inst) throw new Error('Instance tidak ditemukan');
+  if (sockets.has(botId)) return { botId, status: 'already_running' };
+
+  const sessionDir = path.resolve(inst.session_dir);
+  const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+
+  const sock = makeWASocket({
+    version: parseVersion(),
+    auth: state,
+    logger: pino({ level: 'silent' }),
+    browser: parseBrowser(),
+    markOnlineOnConnect: false,
+    printQRInTerminal: false,
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  const entry = { sock, phone: inst.phone, registered: Boolean(state.creds?.me?.id && state.creds?.account) };
+  sockets.set(botId, entry);
+
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, isNewLogin } = update;
+    const e = sockets.get(botId);
+    if (!e) return;
+
+    if (isNewLogin) {
+      await updateInstance(botId, { status: 'reconnecting' });
+      const old = sock;
+      setTimeout(async () => {
+        try {
+          await stopInstance(botId);
+          await startInstance(botId);
+        } catch { /* ignore */ }
+        try { old?.end?.(); } catch { /* ignore */ }
+      }, 1000);
+      return;
+    }
+
+    if (connection === 'open') {
+      e.registered = true;
+      const phone = sock.user?.id ? String(sock.user.id).split('@')[0].split(':')[0] : e.phone;
+      e.phone = phone;
+      await updateInstance(botId, { status: 'connected', phone });
+    }
+
+    if (connection === 'close') {
+      const code = lastDisconnect?.error?.output?.statusCode;
+      const loggedOut = code === DisconnectReason.loggedOut;
+      await updateInstance(botId, { status: loggedOut ? 'logged_out' : 'disconnected', last_error: `code ${code ?? 'unknown'}` });
+      if (!loggedOut) {
+        setTimeout(() => { startInstance(botId).catch(() => {}); }, 5000);
+      } else {
+        await stopInstance(botId);
+      }
+    }
+  });
+
+  await updateInstance(botId, { status: entry.registered ? 'connected' : 'connecting' });
+
+  // pairing code auto-request if not registered
+  if (!entry.registered) {
+    const phone = entry.phone || inst.phone;
+    if (phone) {
+      setTimeout(async () => {
+        try {
+          const s = sockets.get(botId)?.sock;
+          if (!s || s.user) return;
+          let waited = 0;
+          while (!s.ws?.isOpen && waited < 20000) { await sleep(100); waited += 100; }
+          if (!s.ws?.isOpen) return;
+          await sleep(1200);
+          const code = await s.requestPairingCode(phone);
+          await updateInstance(botId, { status: 'pairing', pairing_code: code, pairing_code_expires_at: new Date(Date.now() + 60000).toISOString() });
+        } catch (err) {
+          await updateInstance(botId, { status: 'error', last_error: err?.message || String(err) });
+        }
+      }, 1500);
+    }
+  }
+
+  return { botId, status: entry.registered ? 'connected' : 'connecting' };
+}
+
+export async function stopInstance(botId) {
+  const entry = sockets.get(botId);
+  if (entry?.sock) {
+    try { await entry.sock.end(); } catch { /* ignore */ }
+  }
+  sockets.delete(botId);
+  await updateInstance(botId, { status: 'stopped', pairing_code: null });
+  return { botId, status: 'stopped' };
+}
+
+export async function requestPairingCode(botId) {
+  const inst = await getInstance(botId);
+  if (!inst) throw new Error('Instance tidak ditemukan');
+  const phone = inst.phone;
+  if (!phone) throw new Error('Nomor bot belum diisi');
+  let entry = sockets.get(botId);
+  if (!entry) {
+    await startInstance(botId);
+    entry = sockets.get(botId);
+  }
+  const sock = entry?.sock;
+  if (!sock) throw new Error('Socket belum siap');
+  if (sock.user) return { botId, code: null, status: 'connected' };
+
+  let waited = 0;
+  while (!sock.ws?.isOpen && waited < 20000) { await sleep(100); waited += 100; }
+  if (!sock.ws?.isOpen) throw new Error('WebSocket belum terbuka');
+  await sleep(1200);
+  const code = await sock.requestPairingCode(phone);
+  await updateInstance(botId, { status: 'pairing', pairing_code: code, pairing_code_expires_at: new Date(Date.now() + 60000).toISOString() });
+  return { botId, code, status: 'pairing' };
+}
+
+export function isRunning(botId) {
+  return sockets.has(botId);
 }
