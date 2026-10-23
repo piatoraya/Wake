@@ -109,7 +109,13 @@
     box.innerHTML = '';
     status.textContent = 'Mengambil QR...';
     // ensure started in qr mode
-    await fetch('/api/bot-instances/'+id+'/start', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: 'qr' }) });
+    await fetch('/api/bot-instances/'+id+'/start', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: 'qr', force: true }) });
+    const instRes = await fetch('/api/bot-instances/'+id, { credentials: 'same-origin' });
+    const instData = await instRes.json();
+    if (instData.success && instData.data.status === 'connected') {
+      status.textContent = 'Instance sudah terhubung.';
+      return;
+    }
     // poll for qr
     let attempts = 0;
     const timer = setInterval(async () => {

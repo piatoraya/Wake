@@ -129,14 +129,17 @@ export async function deleteInstance(ownerPhone, botId, isAdmin = false) {
   return inst;
 }
 
-export async function startInstance(botId, method = null) {
+export async function startInstance(botId, method = null, force = false) {
   const inst = await getInstance(botId);
   if (!inst) throw new Error('Instance tidak ditemukan');
 
   const chosenMethod = method || inst.connection_method || process.env.CONNECTION_METHOD || 'pairing';
-  if (sockets.has(botId)) {
+  if (sockets.has(botId) && !force) {
     const e = sockets.get(botId);
     if (e.method === chosenMethod) return { botId, status: 'already_running', method: chosenMethod };
+    await stopInstance(botId);
+  }
+  if (sockets.has(botId) && force) {
     await stopInstance(botId);
   }
 

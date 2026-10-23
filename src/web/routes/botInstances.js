@@ -50,8 +50,8 @@ router.post('/', async (req, res) => {
 
 router.post('/:id/start', async (req, res) => {
   try {
-    const { method } = req.body || {};
-    const result = await startInstance(req.params.id, method);
+    const { method, force } = req.body || {};
+    const result = await startInstance(req.params.id, method, !!force);
     res.json({ success: true, data: result });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
