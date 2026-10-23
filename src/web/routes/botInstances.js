@@ -12,7 +12,6 @@ import {
   requestPairingCode,
   isRunning,
   updateInstancePhone,
-  getQr,
   resetAuth,
 } from '../../services/sultanBotManager.js';
 

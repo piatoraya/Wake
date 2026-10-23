@@ -190,6 +190,7 @@
     else alert(data.error?.message || 'Gagal');
   }
   loadInstances();
+  setInterval(loadInstances, 10000);
 </script>
 </body>
 </html>

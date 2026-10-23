@@ -61,7 +61,9 @@ export async function listInstances(ownerPhone = null) {
 }
 
 export async function updateInstancePhone(botId, phone) {
-  await updateInstance(botId, { phone: String(phone || '').trim() });
+  const cleanPhone = String(phone || '').trim();
+  if (cleanPhone && !/^62\\d{8,13}$/.test(cleanPhone)) throw new Error('Nomor bot tidak valid (format 62...)');
+  await updateInstance(botId, { phone: cleanPhone });
   const inst = await getInstance(botId);
   return inst;
 }
@@ -79,6 +81,8 @@ export async function createInstance(ownerPhone, name, phone = '', method = 'pai
 
   const slug = slugify(name);
   if (!slug) throw new Error('Nama bot tidak valid');
+  const cleanPhone = String(phone || '').trim();
+  if (cleanPhone && !/^62\\d{8,13}$/.test(cleanPhone)) throw new Error('Nomor bot tidak valid (format 62...)');
 
   const all = await listInstances();
   if (all.some((i) => i.slug === slug)) throw new Error('Nama bot sudah dipakai');
@@ -91,7 +95,7 @@ export async function createInstance(ownerPhone, name, phone = '', method = 'pai
     name: name.trim(),
     slug,
     session_dir: sessionDir,
-    phone: String(phone || '').trim(),
+    phone: cleanPhone,
     connection_method: method === 'qr' ? 'qr' : 'pairing',
     status: 'provisioned',
     created_at: new Date().toISOString(),
@@ -203,10 +207,20 @@ export async function startInstance(botId, method = null, force = false) {
       const code = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = code === DisconnectReason.loggedOut;
       await updateInstance(botId, { status: loggedOut ? 'logged_out' : 'disconnected', last_error: `code ${code ?? 'unknown'}` });
-      if (!loggedOut) {
-        setTimeout(() => { startInstance(botId).catch(() => {}); }, 5000);
-      } else {
+      if (loggedOut) {
+        // bersihkan auth lama otomatis (seperti bot utama)
+        try {
+          const inst = await getInstance(botId);
+          if (inst?.session_dir) {
+            const dir = path.resolve(inst.session_dir);
+            await fs.rm(dir, { recursive: true, force: true });
+            await fs.mkdir(dir, { recursive: true });
+          }
+        } catch { /* ignore */ }
         await stopInstance(botId);
+        await updateInstance(botId, { status: 'provisioned', pairing_code: null, last_qr: null, last_qr_ascii: null, last_error: null });
+      } else {
+        setTimeout(() => { startInstance(botId).catch(() => {}); }, 5000);
       }
     }
   });
@@ -285,12 +299,6 @@ export async function requestPairingCode(botId) {
 
 export function isRunning(botId) {
   return sockets.has(botId);
-}
-
-export function getQr(botId) {
-  const e = sockets.get(botId);
-  const inst = null;
-  return { qr: e?.lastQr || null, ascii: null };
 }
 
 export async function getQrInfo(botId) {
