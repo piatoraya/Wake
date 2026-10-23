@@ -5,3 +5,6 @@ data/
 backups/
 *.log
 .DS_Store
+
+# tests
+tests/
