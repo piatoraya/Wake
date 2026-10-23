@@ -8,3 +8,6 @@ backups/
 
 # tests
 tests/
+
+# sessions (auth)
+sessions/
