@@ -9,6 +9,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import { getUser, listUsers, withCollection } from '../config/database.js';
 import { canCreateBotInstance } from './quota.js';
+import qrcode from 'qrcode-terminal';
 
 const sockets = new Map(); // botId -> { sock, phone, registered }
 
@@ -165,7 +166,14 @@ export async function startInstance(botId, method = null) {
 
     if (qr && e.method === 'qr' && !e.registered) {
       e.lastQr = qr;
-      await updateInstance(botId, { status: 'waiting_qr', last_qr: qr });
+      // generate ASCII QR server-side as fallback (tidak bergantung library browser)
+      let ascii = '';
+      try {
+        ascii = await new Promise((resolve) => {
+          qrcode.generate(qr, { small: true }, (out) => resolve(out || ''));
+        });
+      } catch { ascii = ''; }
+      await updateInstance(botId, { status: 'waiting_qr', last_qr: qr, last_qr_ascii: ascii });
     }
 
     if (isNewLogin) {
@@ -277,7 +285,14 @@ export function isRunning(botId) {
 }
 
 export function getQr(botId) {
-  return sockets.get(botId)?.lastQr || null;
+  const e = sockets.get(botId);
+  const inst = null;
+  return { qr: e?.lastQr || null, ascii: null };
+}
+
+export async function getQrInfo(botId) {
+  const inst = await getInstance(botId);
+  return { qr: inst?.last_qr || null, ascii: inst?.last_qr_ascii || null };
 }
 
 export function getInstanceMethod(botId) {

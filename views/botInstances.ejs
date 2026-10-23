@@ -129,10 +129,13 @@
           new QRCode(box, { text: data.data.qr, width: 220, height: 220 });
           status.textContent = 'Pindai QR ini dengan WhatsApp.';
         } catch (e) {
-          status.textContent = 'Gagal render QR: ' + (e && e.message ? e.message : e);
+          status.textContent = 'Gagal render QR (library). Menampilkan ASCII.';
+        }
+        if (data.data.ascii) {
           const pre = document.createElement('pre');
-          pre.style.fontSize = '10px';
-          pre.textContent = data.data.qr;
+          pre.style.fontSize = '8px';
+          pre.style.lineHeight = '8px';
+          pre.textContent = data.data.ascii;
           box.appendChild(pre);
         }
         loadInstances();

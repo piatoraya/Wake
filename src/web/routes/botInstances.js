@@ -60,9 +60,9 @@ router.post('/:id/start', async (req, res) => {
 
 router.get('/:id/qr', async (req, res) => {
   try {
-    const qr = getQr(req.params.id);
-    if (!qr) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'QR belum tersedia' } });
-    res.json({ success: true, data: { qr } });
+    const inst = await getInstance(req.params.id);
+    if (!inst || !inst.last_qr) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'QR belum tersedia' } });
+    res.json({ success: true, data: { qr: inst.last_qr, ascii: inst.last_qr_ascii || '' } });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
   }
