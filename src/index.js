@@ -763,6 +763,40 @@ async function handleCommand(prefix, rawText, ctx) {
       return true;
     }
 
+    /* --------------------------------------------------------------- user */
+    case 'user':
+    case 'info':
+    case 'profil': {
+      const targetArg = args[0] ? normalizePhoneNumber(args[0]) : null;
+      let targetPhone = phone;
+      if (targetArg && targetArg !== phone) {
+        const ownerNum = normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER;
+        if (phone !== ownerNum) {
+          await reply('❌ Hanya owner yang bisa melihat data user lain.');
+          return true;
+        }
+        targetPhone = targetArg;
+      }
+      const u = await getUser(targetPhone);
+      if (!u) { await reply('❌ User tidak ditemukan.'); return true; }
+      const tz = await getUserTimezone(targetPhone);
+      await reply(
+        [
+          '👤 *INFO USER*',
+          '',
+          `📱 Nomor : *${u.phone}*`,
+          `👤 Nama  : *${u.name || u.phone}*`,
+          `🏷 Tier  : *${u.tier}*${u.tier_expired_at ? ' (expired ' + u.tier_expired_at.slice(0, 10) + ')' : ''}`,
+          `📊 Teks terpakai : ${u.text_quota_used}${u.tier === 'free' ? '/50' : (u.tier === 'basic' ? ' (gabungan max 100)' : '')}`,
+          `🎬 Media terpakai : ${u.media_quota_used}${u.tier === 'premium' ? '/100 (bulan)' : (u.tier === 'basic' ? ' (max 1/hari)' : '')}`,
+          `🤖 Limit bot Sultan : ${u.sultan_bot_limit}`,
+          `🤖 Instance aktif : ${u.active_bot_instances.length}`,
+          `🕒 Zona waktu : ${timezoneLabel(tz)}`,
+      ].join('\n')
+      );
+      return true;
+    }
+
     /* --------------------------------------------------------------- saldo */
     case 'saldo':
     case 'wallet': {
