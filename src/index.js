@@ -565,6 +565,19 @@ async function handleCommand(prefix, rawText, ctx) {
       return true;
     }
 
+    /* -------------------------------------------------------------- daftar */
+    case 'daftar':
+    case 'register': {
+      const nameArg = args.join(' ').trim();
+      if (nameArg) {
+        await upsertUser(phone, nameArg);
+        await reply(`✅ Nama Anda diperbarui menjadi *${nameArg}*.`);
+      } else {
+        await reply(`❌ Format: ${prefix}daftar <nama>`);
+      }
+      return true;
+    }
+
     /* ---------------------------------------------------------------- help */
     case 'help':
     case 'start':
@@ -1328,9 +1341,11 @@ async function processIncomingMessage(msg) {
   let existingUser = await getUser(effectivePhone);
   if (!existingUser) {
     const pending = pendingStates.get(jid);
+    const text = extractText(msg.message || {}).trim();
+
     if (pending && pending.state === 'await_register' && pending.expiresAt > Date.now()) {
       pendingStates.delete(jid);
-      if (/\b(daftar|ya|yes|y)\b/i.test(extractText(msg.message || {}))) {
+      if (/\b(daftar|ya|yes|y)\b/i.test(text)) {
         await upsertUser(effectivePhone, name);
         await reply('✅ Pendaftaran berhasil! Sekarang Anda bisa menggunakan bot. Ketik *!help* untuk menu.');
         return;
@@ -1339,12 +1354,41 @@ async function processIncomingMessage(msg) {
       return;
     }
 
+    if (pending && pending.state === 'await_register_name' && pending.expiresAt > Date.now()) {
+      pendingStates.delete(jid);
+      if (!text) {
+        pendingStates.set(jid, { state: 'await_register_name', data: {}, expiresAt: Date.now() + PENDING_TTL_MS });
+        await reply('Nama tidak boleh kosong. Kirim nama Anda untuk pendaftaran.');
+        return;
+      }
+      await upsertUser(effectivePhone, text);
+      await reply('✅ Pendaftaran berhasil! Sekarang Anda bisa menggunakan bot. Ketik *!help* untuk menu.');
+      return;
+    }
+
+    const prefix = detectPrefix(text);
+    if (prefix) {
+      const [rawCmd, ...args] = text.slice(prefix.length).trim().split(/\s+/);
+      const cmd = (rawCmd || '').toLowerCase();
+      if (cmd === 'daftar' || cmd === 'register') {
+        const nameArg = args.join(' ').trim();
+        if (nameArg) {
+          await upsertUser(effectivePhone, nameArg);
+          await reply('✅ Pendaftaran berhasil! Sekarang Anda bisa menggunakan bot. Ketik *!help* untuk menu.');
+          return;
+        }
+        pendingStates.set(jid, { state: 'await_register_name', data: {}, expiresAt: Date.now() + PENDING_TTL_MS });
+        await reply('Silakan kirim nama Anda untuk pendaftaran.');
+        return;
+      }
+    }
+
     pendingStates.set(jid, { state: 'await_register', data: {}, expiresAt: Date.now() + PENDING_TTL_MS });
     await reply(
       [
         '👋 Halo! Anda belum terdaftar di bot ini.',
         '',
-        'Balas *DAFTAR* untuk mendaftar dan mulai menggunakan bot.',
+        'Balas *DAFTAR* atau ketik *.daftar <nama>* untuk mendaftar.',
       ].join('\n'),
     );
     return;
