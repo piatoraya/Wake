@@ -758,15 +758,41 @@ async function handleCommand(prefix, rawText, ctx) {
           `Media terpakai: ${u.media_quota_used}${u.tier === 'premium' ? '/100 (bulan)' : u.tier === 'basic' ? ' (max 1/hari)' : ''}`,
           `Limit bot Sultan: ${u.sultan_bot_limit}`,
           `Instance aktif: ${u.active_bot_instances.length}`,
-        ].join('\\n'),
+        ].join('\n'),
       );
       return true;
     }
 
-    /* --------------------------------------------------------------- user */
+    /* --------------------------------------------------------------- user (list semua user) */
     case 'user':
+    case 'users':
+    case 'listuser': {
+      const ownerNum = normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER;
+      if (phone !== ownerNum) {
+        await reply('❌ Fitur ini khusus owner.');
+        return true;
+      }
+      const users = await listUsers();
+      if (!users.length) {
+        await reply('Belum ada user terdaftar.');
+        return true;
+      }
+      const lines = ['👥 *DAFTAR USER*', ''];
+      for (const u of users) {
+        lines.push(
+          `• *${u.name || u.phone}* (${u.phone})`,
+          `   Tier: *${u.tier}* | Limit bot: ${u.sultan_bot_limit} | Instance: ${u.active_bot_instances.length}`,
+        );
+      }
+      lines.push('', `_Total: ${users.length} user_`);
+      await reply(lines.join('\n'));
+      return true;
+    }
+
+    /* --------------------------------------------------------------- profil (info diri) */
     case 'info':
-    case 'profil': {
+    case 'profil':
+    case 'profile': {
       const targetArg = args[0] ? normalizePhoneNumber(args[0]) : null;
       let targetPhone = phone;
       if (targetArg && targetArg !== phone) {
