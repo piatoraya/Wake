@@ -16,6 +16,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
+import sharp from 'sharp';
 import { computeWalletBalances } from '../config/database.js';
 
 /** Format Rupiah ala Indonesia: Rp 1.250.000 */
@@ -332,6 +333,268 @@ function buildBudgetSheet(workbook, budgets, transactions) {
  * @param {Array}    [params.budgets]     daftar budget user
  * @returns {Promise<string>} filePath hasil
  */
+/* -------------------------------------------------------------------------
+ *  SHEET GABUNGAN — Ringkasan + Transaksi + Chart
+ * ---------------------------------------------------------------------- */
+async function buildCombinedSheet(workbook, { user, transactions, wallets, budgets }) {
+  const ws = workbook.addWorksheet('Backup', {
+    views: [{ state: 'frozen', ySplit: 1 }],
+    properties: { tabColor: { argb: C.headerBg } },
+  });
+
+  let row = 1;
+  ws.getCell(row, 1).value = 'BACKUP KEUANGAN';
+  ws.getCell(row, 1).font = { bold: true, size: 16, color: { argb: C.headerBg } };
+  row += 1;
+  if (user?.name) {
+    ws.getCell(row, 1).value = `Pengguna: ${user.name} (${user.phone || ''})`;
+    row += 1;
+  }
+  ws.getCell(row, 1).value = `Periode: ${transactions.length ? 'Semua data' : 'Tidak ada transaksi'}`;
+  row += 2;
+
+  // ---- Ringkasan per Wallet ----
+  ws.getCell(row, 1).value = 'RINGKASAN PER WALLET';
+  ws.getCell(row, 1).font = { bold: true, size: 12, color: { argb: C.headerBg } };
+  row += 1;
+  const summaryHeaderRow = row;
+  const summaryHeaders = ['Wallet', 'Saldo Awal', 'Pemasukan', 'Pengeluaran', 'Saldo Akhir'];
+  summaryHeaders.forEach((h, i) => {
+    ws.getCell(row, i + 1).value = h;
+  });
+  // style header row properly
+  const hr = ws.getRow(row);
+  hr.height = 22;
+  hr.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: C.headerFg }, size: 11 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+  });
+  row += 1;
+
+  const balances = computeWalletBalances(wallets, transactions);
+  let totalInitial = 0, totalIncome = 0, totalExpense = 0, totalBalance = 0;
+  const summaryStart = row;
+  balances.forEach((w, index) => {
+    ws.getCell(row, 1).value = w.name;
+    ws.getCell(row, 2).value = w.initial_balance;
+    ws.getCell(row, 3).value = w.income;
+    ws.getCell(row, 4).value = w.expense;
+    ws.getCell(row, 5).value = w.balance;
+    const banded = index % 2 === 1;
+    for (let c = 1; c <= 5; c++) {
+      const cell = ws.getCell(row, c);
+      styleCell(cell, { banded });
+      if (c > 1) {
+        cell.numFmt = MONEY_FMT;
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      }
+    }
+    ws.getCell(row, 3).font = { color: { argb: C.income } };
+    ws.getCell(row, 4).font = { color: { argb: C.expense } };
+    ws.getCell(row, 5).font = { bold: true };
+    totalInitial += w.initial_balance;
+    totalIncome += w.income;
+    totalExpense += w.expense;
+    totalBalance += w.balance;
+    row += 1;
+  });
+  // total row
+  ws.getCell(row, 1).value = 'TOTAL';
+  ws.getCell(row, 2).value = totalInitial;
+  ws.getCell(row, 3).value = totalIncome;
+  ws.getCell(row, 4).value = totalExpense;
+  ws.getCell(row, 5).value = totalBalance;
+  for (let c = 1; c <= 5; c++) {
+    const cell = ws.getCell(row, c);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.totalBg } };
+    cell.border = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+    cell.font = { bold: true };
+    if (c > 1) { cell.numFmt = MONEY_FMT; cell.alignment = { horizontal: 'right' }; }
+  }
+  row += 2;
+
+  // ---- Daftar Transaksi ----
+  ws.getCell(row, 1).value = 'DAFTAR TRANSAKSI';
+  ws.getCell(row, 1).font = { bold: true, size: 12, color: { argb: C.headerBg } };
+  row += 1;
+  const txHeaderRow = row;
+  const txHeaders = ['Tanggal', 'Jam', 'Tipe', 'Kategori', 'Wallet', 'Deskripsi', 'Jumlah'];
+  txHeaders.forEach((h, i) => {
+    const cell = ws.getCell(row, i + 1);
+    cell.value = h;
+  });
+  const thr = ws.getRow(row);
+  thr.height = 22;
+  thr.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: C.headerFg }, size: 11 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+  });
+  row += 1;
+
+  const sorted = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const txStart = row;
+  sorted.forEach((t, index) => {
+    const isIncome = t.type === 'income';
+    ws.getCell(row, 1).value = toLocalDateParts(t.date) ?? '-';
+    ws.getCell(row, 2).value = toLocalClock(t.date);
+    ws.getCell(row, 3).value = isIncome ? 'Pemasukan' : 'Pengeluaran';
+    ws.getCell(row, 4).value = t.category || 'Lainnya';
+    ws.getCell(row, 5).value = t.wallet || 'Cash';
+    ws.getCell(row, 6).value = t.description || '-';
+    ws.getCell(row, 7).value = Math.abs(Number(t.amount) || 0);
+
+    const banded = index % 2 === 1;
+    for (let c = 1; c <= 7; c++) {
+      const cell = ws.getCell(row, c);
+      styleCell(cell, { banded });
+    }
+    ws.getCell(row, 1).numFmt = DATE_FMT;
+    ws.getCell(row, 1).alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getCell(row, 2).alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getCell(row, 3).alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getCell(row, 3).font = { bold: true, color: { argb: isIncome ? C.income : C.expense } };
+    ws.getCell(row, 7).numFmt = MONEY_FMT;
+    ws.getCell(row, 7).alignment = { horizontal: 'right', vertical: 'middle' };
+    ws.getCell(row, 7).font = { bold: true, color: { argb: isIncome ? C.income : C.expense } };
+    row += 1;
+  });
+
+  if (sorted.length) {
+    row += 0;
+    const totalRows = [
+      { label: 'TOTAL PEMASUKAN', formula: `SUMIF(C${txStart}:C${txStart + sorted.length - 1},"Pemasukan",G${txStart}:G${txStart + sorted.length - 1})`, color: C.income },
+      { label: 'TOTAL PENGELUARAN', formula: `SUMIF(C${txStart}:C${txStart + sorted.length - 1},"Pengeluaran",G${txStart}:G${txStart + sorted.length - 1})`, color: C.expense },
+    ];
+    for (const t of totalRows) {
+      ws.getCell(row, 6).value = t.label;
+      ws.getCell(row, 7).value = { formula: t.formula };
+      for (let c = 1; c <= 7; c++) {
+        const cell = ws.getCell(row, c);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.totalBg } };
+        cell.border = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+        cell.font = { bold: true, color: { argb: t.color } };
+      }
+      ws.getCell(row, 7).numFmt = MONEY_FMT;
+      ws.getCell(row, 7).alignment = { horizontal: 'right' };
+      row += 1;
+    }
+  }
+
+  // auto filter transaksi
+  if (sorted.length) {
+    ws.autoFilter = `A${txHeaderRow}:G${txHeaderRow}`;
+  }
+
+  // ---- Budget section ----
+  if (budgets.length) {
+    row += 1;
+    ws.getCell(row, 1).value = 'BUDGET BULANAN';
+    ws.getCell(row, 1).font = { bold: true, size: 12, color: { argb: C.headerBg } };
+    row += 1;
+    const bHeaders = ['Kategori', 'Limit Bulanan', 'Terpakai', 'Sisa', 'Pemakaian'];
+    bHeaders.forEach((h, i) => { ws.getCell(row, i + 1).value = h; });
+    const br = ws.getRow(row);
+    br.height = 22;
+    br.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: C.headerFg }, size: 11 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.headerBg } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+    });
+    row += 1;
+
+    const usedByCategory = {};
+    for (const t of transactions) {
+      if (t.type !== 'expense') continue;
+      const key = t.category || 'Lainnya';
+      usedByCategory[key] = (usedByCategory[key] || 0) + t.amount;
+    }
+    budgets.forEach((b, index) => {
+      const used = usedByCategory[b.category] || 0;
+      const limit = Number(b.limit) || 0;
+      const percent = limit > 0 ? used / limit : 0;
+      ws.getCell(row, 1).value = b.category;
+      ws.getCell(row, 2).value = limit;
+      ws.getCell(row, 3).value = used;
+      ws.getCell(row, 4).value = limit - used;
+      ws.getCell(row, 5).value = percent;
+      const banded = index % 2 === 1;
+      for (let c = 1; c <= 5; c++) styleCell(ws.getCell(row, c), { banded });
+      [2, 3, 4].forEach((c) => {
+        const cell = ws.getCell(row, c);
+        cell.numFmt = MONEY_FMT;
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      });
+      const pctCell = ws.getCell(row, 5);
+      pctCell.numFmt = '0%';
+      pctCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      pctCell.font = { bold: true, color: { argb: percent >= 1 ? C.expense : C.income } };
+      row += 1;
+    });
+  }
+
+  // ---- Chart (gambar statis) ----
+  try {
+    // data: pengeluaran per kategori (top 8)
+    const byCat = {};
+    for (const t of transactions) {
+      if (t.type !== 'expense') continue;
+      const k = t.category || 'Lainnya';
+      byCat[k] = (byCat[k] || 0) + (Number(t.amount) || 0);
+    }
+    const top = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    if (top.length) {
+      const width = 720;
+      const height = 360;
+      const maxVal = Math.max(...top.map(([, v]) => v), 1);
+      const barW = Math.floor((width - 80) / top.length) - 10;
+      const svgBars = top.map(([name, val], i) => {
+        const h = Math.round((val / maxVal) * 220);
+        const x = 60 + i * (barW + 10);
+        const y = 260 - h;
+        const label = String(name).slice(0, 12);
+        return `
+          <rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="#22c55e" />
+          <text x="${x + barW / 2}" y="278" font-size="10" text-anchor="middle" fill="#333">${label}</text>
+          <text x="${x + barW / 2}" y="${y - 4}" font-size="9" text-anchor="middle" fill="#333">${Math.round(val / 1000)}k</text>
+        `;
+      }).join('');
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+        <rect width="100%" height="100%" fill="#ffffff"/>
+        <text x="${width / 2}" y="24" font-size="16" font-weight="bold" text-anchor="middle" fill="#1f4e79">Pengeluaran per Kategori</text>
+        <line x1="50" y1="260" x2="${width - 20}" y2="260" stroke="#999" />
+        ${svgBars}
+      </svg>`;
+      const pngBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
+      const imageId = workbook.addImage({ buffer: pngBuffer, extension: 'png' });
+      ws.addImage(imageId, {
+        tl: { col: 0, row: row + 1 },
+        ext: { width: 720, height: 360 },
+      });
+    }
+  } catch (e) {
+    // chart opsional; jangan gagalkan backup
+  }
+
+  // lebar kolom
+  ws.columns = [
+    { width: 16 },
+    { width: 9 },
+    { width: 14 },
+    { width: 22 },
+    { width: 12 },
+    { width: 40 },
+    { width: 16 },
+  ];
+
+  ws.pageSetup = { orientation: 'landscape', fitToPage: true };
+  return ws;
+}
+
 export async function createExcelReport({
   filePath,
   user = null,
@@ -346,17 +609,9 @@ export async function createExcelReport({
   workbook.modified = new Date();
   workbook.properties = { ...(workbook.properties || {}), title: 'Backup Keuangan' };
 
-  buildTransactionSheet(workbook, transactions);
-  buildSummarySheet(workbook, { wallets, transactions });
-  if (budgets.length) buildBudgetSheet(workbook, budgets, transactions);
+  await buildCombinedSheet(workbook, { user, transactions, wallets, budgets });
 
-  // Metadata dokumen (terlihat di detail file Excel)
-  workbook.eachSheet((sheet) => {
-    sheet.pageSetup = { orientation: 'landscape', fitToPage: true };
-  });
-  if (user?.name) {
-    workbook.subject = `Keuangan ${user.name}`;
-  }
+  if (user?.name) workbook.subject = `Keuangan ${user.name}`;
 
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await workbook.xlsx.writeFile(filePath);
