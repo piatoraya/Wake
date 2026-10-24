@@ -76,7 +76,7 @@ export async function getInstance(botId) {
 export async function createInstance(ownerPhone, name, phone = '', method = 'pairing') {
   const user = await getUser(ownerPhone);
   if (!user) throw new Error('User tidak ditemukan');
-  const check = canCreateBotInstance(user);
+  const check = await canCreateBotInstance(user);
   if (!check.allowed) throw new Error(check.reason);
 
   const slug = slugify(name);

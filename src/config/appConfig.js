@@ -9,7 +9,7 @@ function configFile() {
   return path.join(dataDir(), 'config.json');
 }
 
-const DEFAULTS = { footer: 'by: ampang dev' };
+const DEFAULTS = { footer: 'by: ampang dev', tier_enabled: false };
 
 export async function getAppConfig() {
   try {

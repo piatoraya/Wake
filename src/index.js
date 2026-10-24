@@ -39,7 +39,7 @@ import { buildItemSummary, buildReceiptTransaction } from './services/receipt.js
 import { reportAiFailureToOwner } from './services/owner.js';
 import { normalizePhoneNumber } from './utils/phone.js';
 import { normalizeTimezone, timezoneLabel } from './utils/datetime.js';
-import { getFooter, setFooter } from './config/appConfig.js';
+import { getFooter, setFooter, getAppConfig } from './config/appConfig.js';
 import { sendBackup, pruneOldBackups } from './services/backup.js';
 import { checkAndConsumeQuota, canUseBackup } from './services/quota.js';
 import { startWebServer } from './web/server.js';
@@ -522,9 +522,6 @@ const OWNER_MENU_TEXT = (prefix) =>
     `   • ${prefix}reload — muat ulang .env`,
     '',
     '👥 *Manajemen User*',
-    `   • ${prefix}setlevel <nomor> <tier> [hari] — ubah level user`,
-    `   • ${prefix}setbotlimit <nomor> <limit> — ubah limit bot Sultan`,
-    `   • ${prefix}quota — lihat kuota Anda`,
     `   • ${prefix}reset — hapus semua data user (konfirmasi)`,
     '',
     '📊 *Laporan & Backup*',
@@ -547,6 +544,15 @@ const OWNER_MENU_TEXT = (prefix) =>
  * Menangani perintah teks yang diawali prefix (mis. `!rekap`).
  * @returns {Promise<boolean>} true bila pesan adalah perintah yang dikenali
  */
+async function isTierEnabled() {
+  try {
+    const cfg = await getAppConfig();
+    return !!(cfg && cfg.tier_enabled);
+  } catch {
+    return false;
+  }
+}
+
 async function handleCommand(prefix, rawText, ctx) {
   const { jid, phone, name, msg } = ctx;
   const timezone = ctx.timezone || CONFIG.timezone;
@@ -705,7 +711,7 @@ async function handleCommand(prefix, rawText, ctx) {
       const format = formatToken === 'pdf' ? 'pdf' : formatToken ? 'xlsx' : null;
 
       const bu = await getUser(phone);
-      if (!canUseBackup(bu)) {
+      if (!(await canUseBackup(bu))) {
         await reply('❌ Backup data hanya tersedia untuk tier Premium & Sultan. Upgrade dulu ya.');
         return true;
       }
@@ -730,6 +736,10 @@ async function handleCommand(prefix, rawText, ctx) {
 
     /* ------------------------------------------------------------- setlevel */
     case 'setlevel': {
+      if (!(await isTierEnabled())) {
+        await reply('❌ Fitur ini sedang dinonaktifkan.');
+        return true;
+      }
       if (phone !== (normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER)) {
         await reply('❌ Hanya owner yang boleh mengubah level.');
         return true;
@@ -749,6 +759,10 @@ async function handleCommand(prefix, rawText, ctx) {
 
     /* ---------------------------------------------------------- setbotlimit */
     case 'setbotlimit': {
+      if (!(await isTierEnabled())) {
+        await reply('❌ Fitur ini sedang dinonaktifkan.');
+        return true;
+      }
       if (phone !== (normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER)) {
         await reply('❌ Hanya owner yang boleh mengubah limit bot.');
         return true;
@@ -766,6 +780,10 @@ async function handleCommand(prefix, rawText, ctx) {
 
     /* --------------------------------------------------------------- quota */
     case 'quota': {
+      if (!(await isTierEnabled())) {
+        await reply('❌ Fitur ini sedang dinonaktifkan.');
+        return true;
+      }
       const u = await getUser(phone);
       if (!u) { await reply('❌ User tidak ditemukan.'); return true; }
       await reply(
@@ -795,12 +813,13 @@ async function handleCommand(prefix, rawText, ctx) {
         await reply('Belum ada user terdaftar.');
         return true;
       }
+      const tierEnabled = await isTierEnabled();
       const lines = ['👥 *DAFTAR USER*', ''];
       for (const u of users) {
-        lines.push(
-          `• *${u.name || u.phone}* (${u.phone})`,
-          `   Tier: *${u.tier}* | Limit bot: ${u.sultan_bot_limit} | Instance: ${u.active_bot_instances.length}`,
-        );
+        lines.push(`• *${u.name || u.phone}* (${u.phone})`);
+        if (tierEnabled) {
+          lines.push(`   Tier: *${u.tier}* | Limit bot: ${u.sultan_bot_limit} | Instance: ${u.active_bot_instances.length}`);
+        }
       }
       lines.push('', `_Total: ${users.length} user_`);
       await reply(lines.join('\n'));
@@ -824,20 +843,24 @@ async function handleCommand(prefix, rawText, ctx) {
       const u = await getUser(targetPhone);
       if (!u) { await reply('❌ User tidak ditemukan.'); return true; }
       const tz = await getUserTimezone(targetPhone);
-      await reply(
-        [
-          '👤 *INFO USER*',
-          '',
-          `📱 Nomor : *${u.phone}*`,
-          `👤 Nama  : *${u.name || u.phone}*`,
+      const tierEnabled = await isTierEnabled();
+      const infoLines = [
+        '👤 *INFO USER*',
+        '',
+        `📱 Nomor : *${u.phone}*`,
+        `👤 Nama  : *${u.name || u.phone}*`,
+      ];
+      if (tierEnabled) {
+        infoLines.push(
           `🏷 Tier  : *${u.tier}*${u.tier_expired_at ? ' (expired ' + u.tier_expired_at.slice(0, 10) + ')' : ''}`,
           `📊 Teks terpakai : ${u.text_quota_used}${u.tier === 'free' ? '/50' : (u.tier === 'basic' ? ' (gabungan max 100)' : '')}`,
           `🎬 Media terpakai : ${u.media_quota_used}${u.tier === 'premium' ? '/100 (bulan)' : (u.tier === 'basic' ? ' (max 1/hari)' : '')}`,
           `🤖 Limit bot Sultan : ${u.sultan_bot_limit}`,
           `🤖 Instance aktif : ${u.active_bot_instances.length}`,
-          `🕒 Zona waktu : ${timezoneLabel(tz)}`,
-      ].join('\n')
-      );
+        );
+      }
+      infoLines.push(`🕒 Zona waktu : ${timezoneLabel(tz)}`);
+      await reply(infoLines.join('\n'));
       return true;
     }
 
@@ -1141,7 +1164,7 @@ async function handleAiResult(ai, ctx) {
     /* ------------------------------------------------------- get_backup -- */
     case 'get_backup': {
       const bu = await getUser(phone);
-      if (!canUseBackup(bu)) {
+      if (!(await canUseBackup(bu))) {
         await reply('❌ Backup data hanya tersedia untuk tier Premium & Sultan.');
         return;
       }

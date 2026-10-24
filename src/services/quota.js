@@ -4,6 +4,18 @@ import {
   currentMonthKey,
   todayKey,
 } from '../config/database.js';
+import { getAppConfig } from '../config/appConfig.js';
+
+export async function isTierEnabled() {
+  try {
+    const cfg = await getAppConfig();
+    return !!(cfg && cfg.tier_enabled);
+  } catch {
+    return false;
+  }
+}
+
+export const isLimitEnabled = isTierEnabled;
 
 export const TIER_LIMITS = {
   free: { text: 50, media: 0, mediaDaily: 0, backup: false, bot: false },
@@ -39,6 +51,11 @@ export async function checkAndConsumeQuota(phone, inputType) {
   // inputType: 'text' | 'media'
   const user = await getUser(phone);
   if (!user) return { allowed: false, reason: 'User belum terdaftar. Ketik DAFTAR.' };
+
+  // Level/limit dimatikan: semua diizinkan tanpa kuota.
+  if (!(await isTierEnabled())) {
+    return { allowed: true, user };
+  }
 
   // expired tier -> downgrade
   if (isExpired(user)) {
@@ -96,12 +113,14 @@ export async function checkAndConsumeQuota(phone, inputType) {
   return { allowed: true, user };
 }
 
-export function canUseBackup(user) {
+export async function canUseBackup(user) {
+  if (!(await isTierEnabled())) return true;
   const limits = TIER_LIMITS[user?.tier] || TIER_LIMITS.free;
   return !!limits.backup;
 }
 
-export function canCreateBotInstance(user) {
+export async function canCreateBotInstance(user) {
+  if (!(await isTierEnabled())) return { allowed: true };
   if (!user || user.tier !== 'sultan') return { allowed: false, reason: 'Fitur khusus Sultan.' };
   const limit = user.sultan_bot_limit || 1;
   const instances = Array.isArray(user.active_bot_instances) ? user.active_bot_instances : [];
