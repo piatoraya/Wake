@@ -54,6 +54,7 @@ import {
   getStats,
   getUser,
   getUserTimezone,
+  listUsers,
   getWalletBalance,
   getWalletBalances,
   listTransactions,
