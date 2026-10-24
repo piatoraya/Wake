@@ -498,7 +498,7 @@ const HELP_TEXT = (prefix) =>
     `   • ${prefix}analisis — analisis keuangan bulan ini (AI)`,
     `   • ${prefix}analisis 2026-06 — analisis bulan tertentu`,
     `   • ${prefix}backup — pilih format backup (Excel/PDF)`,
-    `   • ${prefix}backup excel/pdf/json — kirim backup Excel/PDF/JSON`,
+    `   • ${prefix}backup excel/pdf — kirim backup Excel/PDF`,
     `   • ${prefix}backup 2026-06 — backup bulan tertentu`,
     `   • ${prefix}saldo — saldo semua wallet`,
     `   • ${prefix}wallet <nama> <saldo_awal> — set saldo awal`,
@@ -696,8 +696,8 @@ async function handleCommand(prefix, rawText, ctx) {
     case 'pdf': {
       const monthToken = args.find((a) => /^\d{4}-\d{2}$/.test(a));
       const month = monthToken || null;
-      const formatToken = args.map((a) => a.toLowerCase()).find((a) => ['pdf', 'json', 'excel', 'xlsx', 'xls'].includes(a));
-      const format = formatToken === 'pdf' ? 'pdf' : formatToken === 'json' ? 'json' : formatToken ? 'xlsx' : null;
+      const formatToken = args.map((a) => a.toLowerCase()).find((a) => ['pdf', 'excel', 'xlsx', 'xls'].includes(a));
+      const format = formatToken === 'pdf' ? 'pdf' : formatToken ? 'xlsx' : null;
 
       const bu = await getUser(phone);
       if (!canUseBackup(bu)) {
@@ -709,7 +709,7 @@ async function handleCommand(prefix, rawText, ctx) {
         pendingStates.set(jid, { state: 'await_backup_format', data: { month }, expiresAt: Date.now() + PENDING_TTL_MS });
         await reply(
           `📦 Mau backup format apa?\n` +
-            `Balas *EXCEL*, *PDF*, atau *JSON*` +
+            `Balas *EXCEL* atau *PDF*` +
             (month ? ` (periode ${formatMonthLabel(month)})` : ' (semua data)') +
             `.\nAtau ketik langsung: *${prefix}backup excel* / *${prefix}backup pdf*.`,
         );
@@ -1431,11 +1431,10 @@ async function processIncomingMessage(msg) {
       const t = textContent.toLowerCase();
       let format = null;
       if (/\bpdf\b/.test(t)) format = 'pdf';
-      else if (/\bjson\b/.test(t)) format = 'json';
       else if (/\b(excel|xlsx|xls)\b/.test(t)) format = 'xlsx';
       if (!format) {
         pendingStates.set(jid, { state: 'await_backup_format', data: pending.data, expiresAt: Date.now() + PENDING_TTL_MS });
-        await reply('❌ Pilihan tidak dikenali. Balas *EXCEL*, *PDF*, atau *JSON*.');
+        await reply('❌ Pilihan tidak dikenali. Balas *EXCEL* atau *PDF*.');
         return;
       }
       const month = pending.data?.month ?? null;
