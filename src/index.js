@@ -129,6 +129,39 @@ const require = createRequire(import.meta.url);
 /** Logger Baileys: level mengikuti BAILEYS_LOG_LEVEL (default 'silent'). */
 const logger = pino({ level: CONFIG.logLevel });
 
+// ---------------------------------------------------------------------------
+// Tee console -> bot.log (agar setiap log & error juga tersimpan ke file)
+// ---------------------------------------------------------------------------
+import fsSync from 'node:fs';
+const BOT_LOG_FILE = path.resolve(process.env.BOT_LOG_FILE || './bot.log');
+const _origConsoleLog = console.log.bind(console);
+const _origConsoleError = console.error.bind(console);
+const _origConsoleWarn = console.warn.bind(console);
+function _appendToBotLog(level, args) {
+  try {
+    const line =
+      `[${new Date().toISOString()}] [${level}] ` +
+      args
+        .map((a) => {
+          if (typeof a === 'string') return a;
+          if (a && a.stack) return a.stack;
+          try { return JSON.stringify(a); } catch { return String(a); }
+        })
+        .join(' ') + '\n';
+    fsSync.appendFileSync(BOT_LOG_FILE, line);
+  } catch {}
+}
+console.log = (...args) => { _origConsoleLog(...args); _appendToBotLog('INFO', args); };
+console.error = (...args) => { _origConsoleError(...args); _appendToBotLog('ERROR', args); };
+console.warn = (...args) => { _origConsoleWarn(...args); _appendToBotLog('WARN', args); };
+
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] uncaughtException:', err?.stack || err?.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] unhandledRejection:', reason?.stack || reason?.message || reason);
+});
+
 /** Socket Baileys aktif (di-set ulang setiap kali reconnect). */
 let sock = null;
 
@@ -2506,6 +2539,9 @@ async function startWhatsApp() {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return; // hanya pesan baru (bukan histori sync)
     for (const msg of messages) {
+      const _jid = msg.key?.remoteJid;
+      const _text = extractText(msg.message || {}).trim().slice(0, 300);
+      console.log(`[MSG IN] jid=${_jid} fromMe=${msg.key?.fromMe} pushName=${msg.pushName || ''} text=${JSON.stringify(_text)}`);
       try {
         await processIncomingMessage(msg);
       } catch (err) {
