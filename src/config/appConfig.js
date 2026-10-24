@@ -21,6 +21,10 @@ export async function getAppConfig() {
   }
 }
 
+export async function setFooter(footer) {
+  return setAppConfig({ footer });
+}
+
 export async function setAppConfig(patch) {
   const current = await getAppConfig();
   const next = { ...current, ...patch };
