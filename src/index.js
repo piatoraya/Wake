@@ -39,6 +39,7 @@ import { buildItemSummary, buildReceiptTransaction } from './services/receipt.js
 import { reportAiFailureToOwner } from './services/owner.js';
 import { normalizePhoneNumber } from './utils/phone.js';
 import { normalizeTimezone, timezoneLabel } from './utils/datetime.js';
+import { getFooter, setFooter } from './config/appConfig.js';
 import { sendBackup, pruneOldBackups } from './services/backup.js';
 import { checkAndConsumeQuota, canUseBackup } from './services/quota.js';
 import { startWebServer } from './web/server.js';
@@ -552,7 +553,10 @@ async function handleCommand(prefix, rawText, ctx) {
   const owner = normalizePhoneNumber(process.env.OWNER_NUMBER || '') || (process.env.OWNER_NUMBER || '').replace(/\D/g, '');
   const [rawCmd, ...args] = rawText.slice(prefix.length).trim().split(/\s+/);
   const cmd = (rawCmd || '').toLowerCase();
-  const reply = (text) => sock.sendMessage(jid, { text: `${text}\n\nby: ampang dev` }, { quoted: msg });
+  const reply = async (text) => {
+  const footer = await getFooter();
+  return sock.sendMessage(jid, { text: `${text}\n\n${footer}` }, { quoted: msg });
+};
 
   switch (cmd) {
     /* -------------------------------------------------------- owner menu */
@@ -837,6 +841,25 @@ async function handleCommand(prefix, rawText, ctx) {
       return true;
     }
 
+    /* ------------------------------------------------------------- setfooter */
+    case 'setfooter':
+    case 'footer': {
+      const ownerNum = normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER;
+      if (phone !== ownerNum) {
+        await reply('❌ Hanya owner yang bisa mengubah footer.');
+        return true;
+      }
+      const textArg = args.join(' ').trim();
+      if (!textArg) {
+        const cur = await getFooter();
+        await reply(`Footer saat ini: *${cur}*\nFormat: ${prefix}setfooter <teks>`);
+        return true;
+      }
+      await setFooter(textArg);
+      await reply(`✅ Footer diubah menjadi: *${textArg}*`);
+      return true;
+    }
+
     /* --------------------------------------------------------------- saldo */
     case 'saldo':
     case 'wallet': {
@@ -1041,7 +1064,7 @@ async function hardResetUser(jid, phone) {
   await upsertUser(phone, phone);
 
   await sock.sendMessage(jid, {
-    text: '🧹 Semua data kamu telah dihapus. Wallet default dibuat ulang dengan saldo 0.\n\nby: ampang dev',
+    text: `🧹 Semua data kamu telah dihapus. Wallet default dibuat ulang dengan saldo 0.\n\n${await getFooter()}`,
   });
 }
 
@@ -1056,7 +1079,10 @@ async function hardResetUser(jid, phone) {
 async function handleAiResult(ai, ctx) {
   const { jid, phone, msg } = ctx;
   const timezone = ctx.timezone || CONFIG.timezone;
-  const reply = (text) => sock.sendMessage(jid, { text: `${text}\n\nby: ampang dev` }, { quoted: msg });
+  const reply = async (text) => {
+  const footer = await getFooter();
+  return sock.sendMessage(jid, { text: `${text}\n\n${footer}` }, { quoted: msg });
+};
 
   switch (ai.intent) {
     /* ------------------------------------------------- add_transaction --- */
@@ -1154,7 +1180,10 @@ async function handleAiResult(ai, ctx) {
 async function handleReceiptResult(receipt, ctx) {
   const { jid, phone, msg } = ctx;
   const timezone = ctx.timezone || CONFIG.timezone;
-  const reply = (text) => sock.sendMessage(jid, { text: `${text}\n\nby: ampang dev` }, { quoted: msg });
+  const reply = async (text) => {
+  const footer = await getFooter();
+  return sock.sendMessage(jid, { text: `${text}\n\n${footer}` }, { quoted: msg });
+};
 
   // Bukan struk -> beri petunjuk, jangan necat transaksi apa pun.
   if (!receipt?.is_receipt) {
@@ -1233,7 +1262,7 @@ async function checkBudgetAlert(phone, tx, jid, quoted) {
       {
         text: `${emoji} *BUDGET ${status}*\n\nKategori *${budget.category}* sudah terpakai *${formatRupiah(used)}* dari limit *${formatRupiah(budget.limit)}* (${pct}%).\n${
           isOver ? `Kelebihan: *${formatRupiah(used - budget.limit)}*` : `Sisa: *${formatRupiah(budget.limit - used)}*`
-        }\n\nby: ampang dev`,
+        }\n\n${await getFooter()}`,
       },
       quoted ? { quoted } : {},
     );
@@ -1336,7 +1365,10 @@ async function processIncomingMessage(msg) {
   const effectivePhone = isPhoneNumber ? phone : botNumber;
 
   const name = msg.pushName || (isPhoneNumber ? effectivePhone : 'Saya');
-  const reply = (text) => sock.sendMessage(jid, { text: `${text}\n\nby: ampang dev` }, { quoted: msg });
+  const reply = async (text) => {
+  const footer = await getFooter();
+  return sock.sendMessage(jid, { text: `${text}\n\n${footer}` }, { quoted: msg });
+};
 
   // Cek registrasi user: jika belum terdaftar, tawarkan pendaftaran.
   let existingUser = await getUser(effectivePhone);
@@ -1604,8 +1636,9 @@ function startCronJobs() {
               listTransactions(user.phone, { month }),
             ]);
 
+            const footer = await getFooter();
             await sock.sendMessage(jid, {
-              text: `${buildReport({ month, stats, balances, categories, budgets, transactions, timezone: tz })}\n\nby: ampang dev`,
+              text: `${buildReport({ month, stats, balances, categories, budgets, transactions, timezone: tz })}\n\n${footer}`,
             });
 
             // Lampirkan file Excel periode tersebut sebagai arsip
