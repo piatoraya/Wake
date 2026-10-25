@@ -65,16 +65,22 @@
     admins = data.data;
     document.getElementById('adminBody').innerHTML = admins.map(a => `
       <tr>
-        <td>${a.username}</td>
-        <td>${a.name}</td>
-        <td>${a.role}</td>
+        <td>${esc(a.username)}</td>
+        <td>${esc(a.name)}</td>
+        <td>${esc(a.role)}</td>
         <td>${a.is_active ? 'Ya' : 'Tidak'}</td>
         <td>
-          <button class="btn btn-sm btn-outline-primary" onclick="editAdmin('${a.id}')">Edit</button>
-          <button class="btn btn-sm btn-outline-danger" onclick="delAdmin('${a.id}')">Hapus</button>
+          <button class="btn btn-sm btn-outline-primary" data-act="edit" data-id="${esc(a.id)}">Edit</button>
+          <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(a.id)}">Hapus</button>
         </td>
       </tr>
     `).join('');
+    document.getElementById('adminBody').querySelectorAll('button[data-act]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.act === 'edit') editAdmin(btn.dataset.id);
+        else delAdmin(btn.dataset.id);
+      });
+    });
   }
   function editAdmin(id) {
     const a = admins.find(x=>x.id===id);

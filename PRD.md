@@ -165,7 +165,7 @@ Harus langsung terlihat (above the fold) saat halaman dashboard dibuka:
 **F-14 Form Pengaturan Kontak (Dashboard)**
 - Form (Mazer Modal/Form) untuk mengelola:
   - Nomor WhatsApp CS/Admin (format internasional, tanpa `+`)
-  - Username/Link Telegram
+  - Email / Link Support
   - Email Support
   - Link FAQ / Bantuan
   - Jam Operasional (teks bebas, mis. "Senin–Jumat 09:00–17:00 WIB")
@@ -253,7 +253,7 @@ Harus langsung terlihat (above the fold) saat halaman dashboard dibuka:
 - `id` (UUID PK), `name`, `type` (income/expense/both), `parent_id` (FK self, nullable), `icon`, `color`, `is_active` (bool), `is_default` (bool), `created_at`, `updated_at`.
 
 **system_contacts** (baru — `contacts.json`)
-- `id` (UUID PK), `key` (unique, mis. `whatsapp_admin`, `telegram`, `email_support`, `faq_link`, `operational_hours`), `label`, `value`, `is_active` (bool), `updated_at`, `updated_by` (FK admin_users.id).
+- `id` (UUID PK), `key` (unique, mis. `whatsapp_admin`, `email_support`, `faq_link`, `operational_hours`), `label`, `value`, `is_active` (bool), `updated_at`, `updated_by` (FK admin_users.id).
 
 **admin_users** (baru — `admin_users.json` atau DB)
 - `id` (UUID PK), `username` (unique), `password_hash` (bcrypt), `role` (owner/admin), `name`, `email`, `is_active`, `last_login`, `created_at`.

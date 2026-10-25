@@ -32,7 +32,7 @@
   fetch('/api/public/contacts').then(r=>r.json()).then(data => {
     const el = document.getElementById('contactList');
     if (!data.success || !data.data.length) { el.textContent = 'Belum ada kontak aktif'; return; }
-    el.innerHTML = data.data.map(c => `<div class="contact-item"><span>${c.label}</span><span class="fw-bold">${c.value || '-'}</span></div>`).join('');
+    el.innerHTML = data.data.map(c => `<div class="contact-item"><span>${esc(c.label)}</span><span class="fw-bold">${esc(c.value || '-')}</span></div>`).join('');
   }).catch(() => { document.getElementById('contactList').textContent = 'Gagal memuat kontak'; });
 </script>
 </body>

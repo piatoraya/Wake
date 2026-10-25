@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware, requireRole } from '../auth.js';
 import { addAuditLog } from '../audit.js';
+import { validateBody, schemas } from '../validate.js';
 import {
   listUsers,
   getUser,
@@ -47,12 +48,12 @@ router.get('/:phone', async (req, res) => {
 });
 
 // edit tier/kuota/bot limit (Owner & Admin)
-router.put('/:phone', async (req, res) => {
+router.put('/:phone', validateBody(schemas.userUpdate), async (req, res) => {
   try {
     const phone = req.params.phone;
     const user = await getUser(phone);
     if (!user) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Pengguna tidak ditemukan' } });
-    const { tier, tier_expired_at, text_quota_used, media_quota_used, sultan_bot_limit, name } = req.body || {};
+    const { tier, tier_expired_at, text_quota_used, media_quota_used, sultan_bot_limit, name } = req.body;
     // admin tidak boleh set tier sultan? biarkan owner; admin bisa edit kuota
     if (tier && req.user.role !== 'owner' && tier === 'sultan') {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Hanya owner yang bisa set tier Sultan' } });

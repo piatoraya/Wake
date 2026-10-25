@@ -86,13 +86,13 @@
     if (!data.success) { document.getElementById('summaryBody').textContent = data.error?.message || 'Gagal'; return; }
     const d = data.data;
     document.getElementById('summaryBody').innerHTML = `
-      <p><strong>${d.monthLabel}</strong></p>
+      <p><strong>${esc(d.monthLabel)}</strong></p>
       <p>Pemasukan: ${fmt(d.totalIncome)} | Pengeluaran: ${fmt(d.totalExpense)} | Net: ${fmt(d.net)}</p>
       <h5>Per Kategori</h5>
-      <ul>${d.categories.map(c=>`<li>${c.category}: ${fmt(c.amount)}</li>`).join('')}</ul>
+      <ul>${d.categories.map(c=>`<li>${esc(c.category)}: ${fmt(c.amount)}</li>`).join('')}</ul>
       <h5>Per Pengguna</h5>
       <table class="table table-sm"><thead><tr><th>Nama</th><th>Tx</th><th>Pemasukan</th><th>Pengeluaran</th><th>Net</th></tr></thead><tbody>
-      ${d.perUser.map(u=>`<tr><td>${u.name||u.phone}</td><td>${u.count}</td><td>${fmt(u.income)}</td><td>${fmt(u.expense)}</td><td>${fmt(u.net)}</td></tr>`).join('')}
+      ${d.perUser.map(u=>`<tr><td>${esc(u.name||u.phone)}</td><td>${Number(u.count)}</td><td>${fmt(u.income)}</td><td>${fmt(u.expense)}</td><td>${fmt(u.net)}</td></tr>`).join('')}
       </tbody></table>
     `;
   });

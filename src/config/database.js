@@ -3,6 +3,7 @@
  * Database LOKAL berbasis file JSON (safe write).
  */
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { normalizeTimezone, getTimezone, zonedParts } from '../utils/datetime.js';
@@ -31,26 +32,128 @@ function fileOf(name) {
   return path.join(getDataDir(), `${name}.json`);
 }
 
-export async function readCollection(name) {
-  const file = fileOf(name);
-  try {
-    const raw = await fs.readFile(file, 'utf8');
-    if (!raw.trim()) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (err) {
-    if (err.code === 'ENOENT') return [];
-    console.error(`[DB] ${path.basename(file)} korup:`, err.message);
+/**
+ * Koleksi yang file-nya sedang rusak (tidak bisa di-parse).
+ * Dipakai untuk MENCEGAH penulisan yang akan menimpa data lama dengan
+ * array kosong — sumber kehilangan data yang paling berbahaya.
+ * @type {Map<string, {file: string, archivedTo: string|null, error: string, at: string}>}
+ */
+const corruptCollections = new Map();
+
+/**
+ * Tandai koleksi sebagai korup, simpan salinan sekali, lalu kembalikan
+ * state kosong supaya pemanggil (bot) tetap bisa jalan.
+ */
+async function markCorrupt(name, file, err) {
+  let info = corruptCollections.get(file);
+  if (!info) {
+    let archivedTo = null;
     try {
-      await fs.rename(file, `${file}.corrupt-${Date.now()}`);
+      archivedTo = `${file}.corrupt-${Date.now()}`;
+      await fs.copyFile(file, archivedTo);
     } catch {
-      /* ignore */
+      archivedTo = null;
     }
-    return [];
+    info = { name, file, archivedTo, error: err.message, at: new Date().toISOString() };
+    corruptCollections.set(file, info);
+    console.error(`[DB] ${path.basename(file)} KORUP: ${err.message}`);
+    console.error(`[DB] Data lama TIDAK akan ditimpa. Salinan: ${archivedTo || '(gagal dibuat)'}`);
+    console.error(
+      `[DB] Perbaiki file tersebut, atau pindahkan/hapus agar koleksi dimulai kosong.`,
+    );
   }
+  return { records: [], corrupt: true, error: info.error, archivedTo: info.archivedTo };
+}
+
+/**
+ * Baca satu koleksi beserta status kesehatannya.
+ * @returns {Promise<{records: any[], corrupt: boolean, error?: string, archivedTo?: string|null}>}
+ */
+async function readState(name) {
+  const file = fileOf(name);
+  let raw;
+  try {
+    raw = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      corruptCollections.delete(file);
+      return { records: [], corrupt: false };
+    }
+    throw err;
+  }
+
+  // File kosong dianggap koleksi kosong (bukan korup).
+  if (!raw.trim()) {
+    corruptCollections.delete(file);
+    return { records: [], corrupt: false };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return markCorrupt(name, file, err);
+  }
+  if (!Array.isArray(parsed)) {
+    return markCorrupt(name, file, new Error('isi file bukan array JSON'));
+  }
+
+  // Sehat kembali (mis. sudah diperbaiki manual) -> lepas tanda korup.
+  corruptCollections.delete(file);
+  return { records: parsed, corrupt: false };
+}
+
+/**
+ * Baca isi koleksi. Bila file korup, kembalikan array kosong agar bot tetap
+ * hidup — tetapi penulisan ke koleksi itu akan ditolak (lihat `writeAtomic`).
+ * @returns {Promise<any[]>}
+ */
+export async function readCollection(name) {
+  const state = await readState(name);
+  return state.records;
+}
+
+/**
+ * Daftar koleksi yang saat ini rusak — untuk ditampilkan di dashboard/log.
+ * @returns {Array<{name: string, file: string, archivedTo: string|null, error: string, at: string}>}
+ */
+/**
+ * Pindai semua koleksi dan laporkan yang rusak.
+ * Dipakai endpoint `/health` supaya kerusakan file terdeteksi tanpa menunggu
+ * ada request lain yang kebetulan membaca koleksi tersebut.
+ * @returns {Promise<Array<{name: string, file: string, archivedTo: string|null, error: string, at: string}>>}
+ */
+export async function scanCorruptCollections() {
+  for (const name of COLLECTIONS) {
+    try {
+      await readState(name);
+    } catch {
+      /* error I/O lain: biarkan ditangani pemanggil */
+    }
+  }
+  return listCorruptCollections();
+}
+
+export function listCorruptCollections() {
+  // Buang entri basi: file sudah tidak ada (mis. dipindahkan admin atau
+  // DATA_DIR berganti), jadi tidak lagi relevan dilaporkan sebagai korup.
+  for (const [key, info] of corruptCollections) {
+    if (!fsSync.existsSync(info.file)) corruptCollections.delete(key);
+  }
+  return [...corruptCollections.values()].map((info) => ({ ...info }));
 }
 
 async function writeAtomic(name, records) {
+  // Jangan pernah menimpa koleksi korup: array kosong hasil pembacaan gagal
+  // akan menghapus seluruh data lama secara permanen.
+  const corrupt = corruptCollections.get(fileOf(name));
+  if (corrupt) {
+    throw new Error(
+      `Koleksi "${name}" rusak (${corrupt.error}). Penulisan dibatalkan agar data lama tidak hilang. ` +
+        `Perbaiki ${path.basename(corrupt.file)} atau pindahkan file tersebut, lalu coba lagi.`,
+    );
+  }
+
   const dir = getDataDir();
   await fs.mkdir(dir, { recursive: true });
   const target = fileOf(name);
@@ -65,7 +168,9 @@ export function writeCollection(name, records) {
 
 export async function withCollection(name, mutator) {
   return enqueue(name, async () => {
-    const records = await readCollection(name);
+    // Baca lewat readState agar status korup terdeteksi SEBELUM mutasi,
+    // sehingga writeAtomic bisa menolak dan data lama tetap utuh.
+    const { records } = await readState(name);
     const result = await mutator(records);
     await writeAtomic(name, records);
     return result;
@@ -120,7 +225,7 @@ export function todayKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function applyUserDefaults(user) {
+export function applyUserDefaults(user) {
   if (!user.tier) user.tier = 'free';
   user.tier = normalizeTier(user.tier);
   if (typeof user.text_quota_used !== 'number') user.text_quota_used = 0;

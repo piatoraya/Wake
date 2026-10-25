@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../auth.js';
 import { addAuditLog } from '../audit.js';
+import { validateBody, schemas } from '../validate.js';
 import {
   listUsers,
   listTransactions,
@@ -66,13 +67,10 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', validateBody(schemas.transactionCreate), async (req, res) => {
   try {
-    const { user_phone, type, amount, category, wallet, description, date, items, source } = req.body || {};
-    if (!user_phone) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'user_phone wajib' } });
-    const amt = Number(amount);
-    if (!amt || amt <= 0) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'amount harus > 0' } });
-    const tx = await addTransaction({ user_phone, type, amount: amt, category, wallet, description, date, items, source: source || 'web' });
+    const { user_phone, type, amount, category, wallet, description, date, items, source } = req.body;
+    const tx = await addTransaction({ user_phone, type, amount, category, wallet, description, date, items, source: source || 'web' });
     await addAuditLog({ adminId: req.user.sub, action: 'create', entity: 'transaction', entityId: tx.id, after: tx, ip: req.ip, userAgent: req.get('user-agent') });
     res.status(201).json({ success: true, data: tx });
   } catch (e) {
@@ -80,11 +78,11 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', validateBody(schemas.transactionUpdate), async (req, res) => {
   try {
     const before = await getTransactionById(req.params.id);
     if (!before) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Transaksi tidak ditemukan' } });
-    const updated = await updateTransaction(req.params.id, req.body || {});
+    const updated = await updateTransaction(req.params.id, req.body);
     await addAuditLog({ adminId: req.user.sub, action: 'update', entity: 'transaction', entityId: req.params.id, before, after: updated, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: updated });
   } catch (e) {

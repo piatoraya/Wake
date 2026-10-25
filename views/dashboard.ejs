@@ -121,7 +121,7 @@
     document.getElementById('kpiExpense').textContent = fmt(d.totalExpense);
     document.getElementById('kpiNet').textContent = fmt(d.net);
     const wl = document.getElementById('walletList');
-    wl.innerHTML = d.wallets.map(w => `<div class="d-flex justify-content-between mb-2"><span>${w.name}</span><span class="fw-bold">${fmt(w.balance)}</span></div>`).join('') || '<p class="text-muted">Belum ada wallet</p>';
+    wl.innerHTML = d.wallets.map(w => `<div class="d-flex justify-content-between mb-2"><span>${esc(w.name)}</span><span class="fw-bold">${fmt(w.balance)}</span></div>`).join('') || '<p class="text-muted">Belum ada wallet</p>';
   }
   async function loadCashflow() {
     const res = await fetch('/api/dashboard/cashflow?granularity=daily', { credentials: 'same-origin' });
@@ -158,7 +158,7 @@
     const data = await res.json();
     if (!data.success) return;
     const tbody = document.getElementById('recentBody');
-    tbody.innerHTML = data.data.map(t => `<tr><td>${new Date(t.date).toLocaleDateString('id-ID')}</td><td>${t.user_name||t.user_phone}</td><td>${t.category}</td><td>${fmt(t.amount)}</td></tr>`).join('');
+    tbody.innerHTML = data.data.map(t => `<tr><td>${esc(new Date(t.date).toLocaleDateString('id-ID'))}</td><td>${esc(t.user_name||t.user_phone)}</td><td>${esc(t.category)}</td><td>${fmt(t.amount)}</td></tr>`).join('');
   }
   loadSummary(); loadCashflow(); loadCategories(); loadRecent();
 </script>

@@ -8,23 +8,24 @@ import {
   verifyToken,
   stripPassword,
   updateAdminUser,
+  cookieOptions,
 } from '../auth.js';
 import { addAuditLog } from '../audit.js';
+import { validateBody, schemas } from '../validate.js';
 
 const router = Router();
 
-router.post('/login', async (req, res) => {
+router.post('/login', validateBody(schemas.login), async (req, res) => {
   try {
-    const { username, password } = req.body || {};
-    if (!username || !password) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Username & password wajib' } });
+    const { username, password } = req.body;
     const user = await findAdminByUsername(username);
     if (!user) return res.status(401).json({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Kredensial salah' } });
     const ok = await verifyPassword(user, password);
     if (!ok) return res.status(401).json({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Kredensial salah' } });
     const access = signAccessToken(user);
     const refresh = signRefreshToken(user);
-    res.cookie('access_token', access, { httpOnly: true, sameSite: 'lax', maxAge: 30 * 60 * 1000 });
-    res.cookie('refresh_token', refresh, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 });
+    res.cookie('access_token', access, cookieOptions(30 * 60 * 1000));
+    res.cookie('refresh_token', refresh, cookieOptions(7 * 24 * 60 * 60 * 1000));
     await updateAdminUser(user.id, { last_login: new Date().toISOString() });
     await addAuditLog({ adminId: user.id, action: 'login', entity: 'admin_user', entityId: user.id, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: { user: stripPassword(user), access_token: access } });
@@ -34,8 +35,8 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('access_token');
-  res.clearCookie('refresh_token');
+  res.clearCookie('access_token', { path: '/' });
+  res.clearCookie('refresh_token', { path: '/' });
   res.json({ success: true });
 });
 
@@ -53,7 +54,7 @@ router.post('/refresh', async (req, res) => {
   const user = await findAdminById(payload.sub);
   if (!user) return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'User tidak ditemukan' } });
   const access = signAccessToken(user);
-  res.cookie('access_token', access, { httpOnly: true, sameSite: 'lax', maxAge: 30 * 60 * 1000 });
+  res.cookie('access_token', access, cookieOptions(30 * 60 * 1000));
   res.json({ success: true, data: { access_token: access } });
 });
 

@@ -2,11 +2,27 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { readCollection, withCollection } from '../config/database.js';
-import { addAuditLog } from './audit.js';
+import { requireJwtSecret, isProduction } from '../config/envCheck.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production-please';
+// JWT_SECRET tidak lagi punya fallback: aplikasi menolak start bila belum
+// diisi / masih placeholder (lihat src/config/envCheck.js).
+let cachedSecret = null;
+function jwtSecret() {
+  if (!cachedSecret) cachedSecret = requireJwtSecret();
+  return cachedSecret;
+}
+
 const JWT_EXPIRES = process.env.JWT_EXPIRES || '30m';
 const REFRESH_EXPIRES = process.env.REFRESH_EXPIRES || '7d';
+
+/**
+ * Opsi cookie sesi.
+ * `secure` aktif otomatis di production, atau paksa lewat COOKIE_SECURE=true.
+ */
+export function cookieOptions(maxAge) {
+  const secure = process.env.COOKIE_SECURE === 'true' || isProduction();
+  return { httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge };
+}
 
 export const ROLES = { OWNER: 'owner', ADMIN: 'admin' };
 
@@ -27,10 +43,19 @@ export async function findAdminById(id) {
 export async function seedDefaultAdmins() {
   const users = await readCollection('admin_users');
   if (users.length > 0) return users;
+
+  // Tidak ada fallback password: admin pertama wajib dibuat dari .env.
   const ownerUser = process.env.WEB_OWNER_USERNAME || 'owner';
-  const ownerPass = process.env.WEB_OWNER_PASSWORD || 'owner123';
+  const ownerPass = process.env.WEB_OWNER_PASSWORD;
   const adminUser = process.env.WEB_ADMIN_USERNAME || 'admin';
-  const adminPass = process.env.WEB_ADMIN_PASSWORD || 'admin123';
+  const adminPass = process.env.WEB_ADMIN_PASSWORD;
+
+  if (!ownerPass || !adminPass) {
+    throw new Error(
+      'Belum ada admin di data/admin_users.json dan WEB_OWNER_PASSWORD / ' +
+        'WEB_ADMIN_PASSWORD belum diisi di .env. Isi keduanya untuk membuat admin pertama.',
+    );
+  }
   const now = new Date().toISOString();
   const seeded = [
     {
@@ -115,25 +140,46 @@ export async function verifyPassword(user, password) {
 }
 
 export function signAccessToken(user) {
-  return jwt.sign({ sub: user.id, username: user.username, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  return jwt.sign({ sub: user.id, username: user.username, role: user.role, name: user.name }, jwtSecret(), { expiresIn: JWT_EXPIRES });
 }
 
 export function signRefreshToken(user) {
-  return jwt.sign({ sub: user.id, type: 'refresh' }, JWT_SECRET, { expiresIn: REFRESH_EXPIRES });
+  return jwt.sign({ sub: user.id, type: 'refresh' }, jwtSecret(), { expiresIn: REFRESH_EXPIRES });
 }
 
 export function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, jwtSecret());
   } catch {
     return null;
   }
 }
 
-export function authMiddleware(req, res, next) {
+/**
+ * Ambil payload JWT dari cookie `access_token` atau header `Authorization: Bearer`.
+ * Satu-satunya tempat pembacaan token, dipakai bersama oleh middleware API
+ * maupun halaman dashboard supaya aturannya tidak pernah berbeda.
+ * @returns {object|null}
+ */
+export function userFromRequest(req) {
   const token = req.cookies?.access_token || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const payload = token ? verifyToken(token) : null;
+  return token ? verifyToken(token) : null;
+}
+
+export function authMiddleware(req, res, next) {
+  const payload = userFromRequest(req);
   if (!payload) return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Login diperlukan' } });
+  req.user = payload;
+  next();
+}
+
+/**
+ * Middleware untuk halaman HTML: sama seperti {@link authMiddleware}, tetapi
+ * mengalihkan ke /login alih-alih membalas 401 JSON.
+ */
+export function authPage(req, res, next) {
+  const payload = userFromRequest(req);
+  if (!payload) return res.redirect('/login');
   req.user = payload;
   next();
 }

@@ -9,13 +9,17 @@
 **Template UI:** Mazer Admin Dashboard (Bootstrap 5) — https://github.com/zuramai/mazer
 **Target Pengguna:** Owner (akses penuh) & Admin/CS (akses operasional)
 
+> **Catatan revisi (v1.1):** Lingkup kanal dipersempit ke **WhatsApp saja** —
+> integrasi Telegram dihapus. Tier mengikuti implementasi: **free / basic /
+> premium / sultan** (bukan Gratis/Plus/Pro).
+
 ---
 
 ## 1. Overview & Business Objectives
 
 ### 1.1 Latar Belakang
 
-CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui WhatsApp dan Telegram. Pengguna dapat mencatat transaksi dengan teks, foto struk (OCR), dan voice note. Platform memiliki model langganan berjenjang (Gratis, Plus, Pro) dengan pembayaran QRIS otomatis via webhook. Untuk mengoperasikan platform secara efisien, dibutuhkan **Web Dashboard Admin & Owner** yang terpusat untuk memantau metrik, mengelola pengguna & langganan, men-troubleshoot parsing AI, dan mengelola konten support yang tampil dinamis di landing page.
+CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui **WhatsApp**. Pengguna dapat mencatat transaksi dengan teks, foto struk (OCR), dan voice note. Platform memiliki model langganan berjenjang (Gratis, Plus, Pro) dengan pembayaran QRIS otomatis via webhook. Untuk mengoperasikan platform secara efisien, dibutuhkan **Web Dashboard Admin & Owner** yang terpusat untuk memantau metrik, mengelola pengguna & langganan, men-troubleshoot parsing AI, dan mengelola konten support yang tampil dinamis di landing page.
 
 ### 1.2 Tujuan Operasional
 
@@ -58,7 +62,7 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
 - Memantau status user (daftar user, paket, sisa kuota, tanggal reset).
 - Cek riwayat pesan bot & status parsing AI.
 - Troubleshooting transaksi user (lihat detail transaksi, adjust kuota manual, ubah status paket jika ada kendala pembayaran).
-- Update informasi kontak support (WhatsApp CS, Telegram, Email, Jam Operasional).
+- Update informasi kontak support (WhatsApp CS, Email, Jam Operasional, Link FAQ).
 - **Tidak boleh:** mengubah harga/paket, mengelola admin users, melihat laporan keuangan platform (MRR detail), konfigurasi sistem inti.
 
 ### 2.3 Matriks Izin (Ringkas)
@@ -97,7 +101,7 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
 ### 3.2 B. User & Subscription Management
 
 **F-03 Tabel Data User (Simple-DataTables)**
-- Kolom: ID, No WhatsApp/Telegram, Email, Status Paket, Sisa Kuota Pesan, Tanggal Reset Kuota (tiap tanggal 1), Tgl Daftar, Aksi.
+- Kolom: ID, No WhatsApp, Nama, Tier, Sisa Kuota Teks/Media, Tanggal Reset Kuota (tiap tanggal 1), Tgl Daftar, Aksi.
 - Search, sort, filter by paket/status, pagination server-side.
 
 **F-04 Edit/Adjust Manual**
@@ -127,7 +131,7 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
 - Form (Mazer Modal/Form) untuk mengatur:
   - Nomor WhatsApp CS
   - Email Support (`support@catataja.id`)
-  - Username Telegram Helpdesk
+  - Email Helpdesk
   - Link FAQ/Bantuan
   - Jam Operasional
 - Field: `key`, `label`, `value`, `is_active`, `updated_at`, `updated_by`.
@@ -147,7 +151,7 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
 ### 3.6 Settings & System Monitor
 
 **F-11 Status Bot & Log Sistem**
-- Status koneksi bot WhatsApp/Telegram (Online/Offline).
+- Status koneksi bot WhatsApp (Online/Offline) + status rotasi API key Gemini.
 - Log error sistem (API, webhook, parsing).
 - Konfigurasi webhook pembayaran QRIS (URL, secret).
 
@@ -182,7 +186,7 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
 ### 5.1 Desain Relasi Tabel Utama
 
 **users**
-- `id` (PK), `phone` (WA), `telegram_id`, `email`, `tier_id` (FK subscription_tiers.id), `quota_remaining` (int), `reset_date` (date), `created_at`, `updated_at`.
+- `id` (PK), `phone` (WA, unik), `name`, `tier` (free/basic/premium/sultan), `tier_expired_at`, `text_quota_used` (int), `media_quota_used` (int), `quota_reset_date` (date), `created_at`, `updated_at`.
 
 **subscription_tiers**
 - `id` (PK), `name` (Gratis/Plus/Pro), `price` (int), `quota_messages` (int), `features` (JSON), `is_active` (bool).
@@ -196,7 +200,7 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
 
 **system_settings**
 - `id` (PK), `key` (unique), `value` (text), `label`, `description`, `is_active` (bool), `updated_at`, `updated_by` (FK admin_users.id).
-- Digunakan untuk pengaturan kontak & operasional (WhatsApp CS, Email, Telegram, FAQ, Jam Operasional).
+- Digunakan untuk pengaturan kontak & operasional (WhatsApp CS, Email, FAQ, Jam Operasional).
 
 **admin_users**
 - `id` (PK), `username` (unique), `password_hash`, `role` (owner/admin), `name`, `email`, `is_active`, `last_login`, `created_at`.
@@ -220,7 +224,7 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
 
 - Autentikasi JWT/Session ketat; password di-hash (bcrypt, cost ≥ 12).
 - RBAC per endpoint (Owner vs Admin/CS).
-- Enkripsi data sensitif user (nomor WA/Telegram, email) at-rest (opsional v1.1).
+- Enkripsi data sensitif user (nomor WA, email) at-rest (opsional v1.1).
 - Sanitasi input (Zod/Joi), escape output (hindari XSS), parameterized query.
 - Rate limiting login (5/15 menit per IP) & API (100/15 menit).
 - Audit log untuk semua aksi mutasi (adjust kuota, ubah paket, edit kontak, dll).
@@ -276,7 +280,7 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
 - [ ] Log viewer pesan AI dengan filter & detail modal.
 - [ ] CRUD kontak support berfungsi; endpoint publik mengembalikan data aktif.
 - [ ] Ekspor CSV/Excel transaksi & langganan berfungsi.
-- [ ] Status bot (WA/Telegram) tampil real-time.
+- [ ] Status bot WhatsApp tampil real-time.
 - [ ] Dark mode toggle berfungsi di semua halaman.
 
 ---

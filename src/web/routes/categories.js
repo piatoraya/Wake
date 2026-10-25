@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../auth.js';
 import { addAuditLog } from '../audit.js';
+import { validateBody, schemas } from '../validate.js';
 import { listCategories, getCategory, addCategory, updateCategory, deleteCategory } from '../../config/database.js';
 
 const router = Router();
@@ -25,10 +26,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', validateBody(schemas.categoryCreate), async (req, res) => {
   try {
-    const { name } = req.body || {};
-    if (!name) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Nama kategori wajib' } });
     const cat = await addCategory(req.body);
     await addAuditLog({ adminId: req.user.sub, action: 'create', entity: 'category', entityId: cat.id, after: cat, ip: req.ip, userAgent: req.get('user-agent') });
     res.status(201).json({ success: true, data: cat });
@@ -37,11 +36,11 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', validateBody(schemas.categoryUpdate), async (req, res) => {
   try {
     const before = await getCategory(req.params.id);
     if (!before) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Kategori tidak ditemukan' } });
-    const updated = await updateCategory(req.params.id, req.body || {});
+    const updated = await updateCategory(req.params.id, req.body);
     await addAuditLog({ adminId: req.user.sub, action: 'update', entity: 'category', entityId: req.params.id, before, after: updated, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: updated });
   } catch (e) {

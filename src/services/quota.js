@@ -1,6 +1,7 @@
 import {
   getUser,
-  updateUserFields,
+  withCollection,
+  applyUserDefaults,
   currentMonthKey,
   todayKey,
 } from '../config/database.js';
@@ -47,70 +48,93 @@ export async function resetQuotaIfNeeded(user) {
   return user;
 }
 
+/**
+ * Cek & pakai kuota dalam SATU transaksi tulis (atomik).
+ *
+ * Sebelumnya fungsi ini membaca user, menghitung di memori, lalu menulis
+ * terpisah lewat `updateUserFields`. Dua pesan yang masuk hampir bersamaan
+ * bisa membaca angka yang sama sehingga kuota terpakai lebih dari batas
+ * (race condition). Sekarang baca + hitung + tulis terjadi di dalam
+ * `withCollection` yang punya antrean per-file, jadi request diproses
+ * berurutan dan tidak ada update yang hilang.
+ *
+ * @param {string} phone
+ * @param {'text'|'media'} inputType
+ * @returns {Promise<{allowed:boolean, reason?:string, user?:object}>}
+ */
 export async function checkAndConsumeQuota(phone, inputType) {
-  // inputType: 'text' | 'media'
-  const user = await getUser(phone);
-  if (!user) return { allowed: false, reason: 'User belum terdaftar. Ketik DAFTAR.' };
-
-  // Level/limit dimatikan: semua diizinkan tanpa kuota.
+  // Level/limit dimatikan: semua diizinkan tanpa kuota (tanpa menulis apa pun).
   if (!(await isTierEnabled())) {
+    const user = await getUser(phone);
+    if (!user) return { allowed: false, reason: 'User belum terdaftar. Ketik DAFTAR.' };
     return { allowed: true, user };
   }
 
-  // expired tier -> downgrade
-  if (isExpired(user)) {
-    await updateUserFields(phone, { tier: 'free', tier_expired_at: null });
-    user.tier = 'free';
-  }
+  let denial = null;
 
-  await resetQuotaIfNeeded(user);
+  const updated = await withCollection('users', (users) => {
+    const user = users.find((u) => u.phone === phone);
+    if (!user) {
+      denial = 'User belum terdaftar. Ketik DAFTAR.';
+      return null;
+    }
 
-  const limits = TIER_LIMITS[user.tier] || TIER_LIMITS.free;
+    // Samakan default field (tier, counter, dsb.) sebelum dihitung.
+    applyUserDefaults(user);
 
-  if (inputType === 'media') {
-    if (!limits.backup && user.tier === 'free') {
-      // free has no media
+    // Tier kedaluwarsa -> turunkan ke free di record yang sama.
+    if (isExpired(user)) {
+      user.tier = 'free';
+      user.tier_expired_at = null;
     }
-    if (user.tier === 'free') {
-      return { allowed: false, reason: '❌ Media (foto struk/voice) tidak tersedia di tier Free. Upgrade ke Basic/Premium/Sultan.' };
-    }
-    if (user.tier === 'basic') {
-      if (user.media_quota_used >= 1) {
-        return { allowed: false, reason: '❌ Limit media Basic: 1x/hari. Coba lagi besok.' };
-      }
-      user.media_quota_used += 1;
-    } else if (user.tier === 'premium') {
-      if (user.media_quota_used >= limits.media) {
-        return { allowed: false, reason: '❌ Kuota media Premium habis (100/bulan).' };
-      }
-      user.media_quota_used += 1;
-    }
-    // sultan unlimited
-  } else {
-    if (user.tier === 'free') {
-      if (user.text_quota_used >= limits.text) {
-        return { allowed: false, reason: '❌ Kuota teks Free habis (50/bulan). Upgrade untuk unlimited.' };
-      }
-      user.text_quota_used += 1;
-    } else if (user.tier === 'basic') {
-      const total = user.text_quota_used + user.media_quota_used;
-      if (total >= 100) {
-        return { allowed: false, reason: '❌ Kuota Basic habis (100 transaksi/bulan).' };
-      }
-      user.text_quota_used += 1;
-    }
-    // premium/sultan unlimited text
-  }
 
-  // persist
-  await updateUserFields(phone, {
-    text_quota_used: user.text_quota_used,
-    media_quota_used: user.media_quota_used,
-    quota_reset_date: user.quota_reset_date,
-    last_media_reset_daily: user.last_media_reset_daily,
+    resetQuotaIfNeeded(user);
+
+    const limits = TIER_LIMITS[user.tier] || TIER_LIMITS.free;
+
+    if (inputType === 'media') {
+      if (user.tier === 'free') {
+        denial = '❌ Media (foto struk/voice) tidak tersedia di tier Free. Upgrade ke Basic/Premium/Sultan.';
+        return null;
+      }
+      if (user.tier === 'basic') {
+        if (user.media_quota_used >= 1) {
+          denial = '❌ Limit media Basic: 1x/hari. Coba lagi besok.';
+          return null;
+        }
+        user.media_quota_used += 1;
+      } else if (user.tier === 'premium') {
+        if (user.media_quota_used >= limits.media) {
+          denial = '❌ Kuota media Premium habis (100/bulan).';
+          return null;
+        }
+        user.media_quota_used += 1;
+      }
+      // sultan unlimited
+    } else {
+      if (user.tier === 'free') {
+        if (user.text_quota_used >= limits.text) {
+          denial = '❌ Kuota teks Free habis (50/bulan). Upgrade untuk unlimited.';
+          return null;
+        }
+        user.text_quota_used += 1;
+      } else if (user.tier === 'basic') {
+        const total = user.text_quota_used + user.media_quota_used;
+        if (total >= 100) {
+          denial = '❌ Kuota Basic habis (100 transaksi/bulan).';
+          return null;
+        }
+        user.text_quota_used += 1;
+      }
+      // premium/sultan unlimited text
+    }
+
+    user.updated_at = new Date().toISOString();
+    return { ...user };
   });
 
-  return { allowed: true, user };
+  if (!updated) return { allowed: false, reason: denial || 'Kuota tidak tersedia.' };
+  return { allowed: true, user: updated };
 }
 
 export async function canUseBackup(user) {

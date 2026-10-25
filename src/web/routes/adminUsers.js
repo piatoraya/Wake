@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware, requireRole } from '../auth.js';
 import { addAuditLog } from '../audit.js';
+import { validateBody, schemas } from '../validate.js';
 import {
   getAdminUsers,
   createAdminUser,
@@ -22,11 +23,10 @@ router.get('/', requireRole('owner'), async (req, res) => {
   }
 });
 
-router.post('/', requireRole('owner'), async (req, res) => {
+router.post('/', requireRole('owner'), validateBody(schemas.adminCreate), async (req, res) => {
   try {
-    const { username, password, role, name, email } = req.body || {};
-    if (!username || !password) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Username & password wajib' } });
-    const user = await createAdminUser({ username, password, role, name, email });
+    const { username, password, role, name } = req.body;
+    const user = await createAdminUser({ username, password, role, name });
     await addAuditLog({ adminId: req.user.sub, action: 'create', entity: 'admin_user', entityId: user.id, after: user, ip: req.ip, userAgent: req.get('user-agent') });
     res.status(201).json({ success: true, data: user });
   } catch (e) {
@@ -34,10 +34,10 @@ router.post('/', requireRole('owner'), async (req, res) => {
   }
 });
 
-router.put('/:id', requireRole('owner'), async (req, res) => {
+router.put('/:id', requireRole('owner'), validateBody(schemas.adminUpdate), async (req, res) => {
   try {
     const before = await findAdminById(req.params.id);
-    const updated = await updateAdminUser(req.params.id, req.body || {});
+    const updated = await updateAdminUser(req.params.id, req.body);
     if (!updated) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Admin tidak ditemukan' } });
     await addAuditLog({ adminId: req.user.sub, action: 'update', entity: 'admin_user', entityId: req.params.id, before: before ? stripPassword(before) : null, after: updated, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: updated });

@@ -127,10 +127,10 @@
     const txCat = document.getElementById('txCategory');
     const txUser = document.getElementById('txUser');
     const fUser = document.getElementById('fUser');
-    catSel.innerHTML = '<option value="">Semua Kategori</option>' + categories.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');
-    txCat.innerHTML = categories.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');
-    txUser.innerHTML = users.map(u=>`<option value="${u.phone}">${u.name||u.phone}</option>`).join('');
-    fUser.innerHTML = '<option value="">Semua Pengguna</option>' + users.map(u=>`<option value="${u.phone}">${u.name||u.phone}</option>`).join('');
+    catSel.innerHTML = '<option value="">Semua Kategori</option>' + categories.map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+    txCat.innerHTML = categories.map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+    txUser.innerHTML = users.map(u=>`<option value="${esc(u.phone)}">${esc(u.name||u.phone)}</option>`).join('');
+    fUser.innerHTML = '<option value="">Semua Pengguna</option>' + users.map(u=>`<option value="${esc(u.phone)}">${esc(u.name||u.phone)}</option>`).join('');
   }
 
   async function loadTx() {
@@ -153,19 +153,27 @@
     const tbody = document.getElementById('txBody');
     tbody.innerHTML = data.data.map(t => `
       <tr>
-        <td>${new Date(t.date).toLocaleString('id-ID')}</td>
-        <td>${t.user_name||t.user_phone}</td>
-        <td><span class="badge ${t.type==='income'?'bg-success':'bg-danger'}">${t.type}</span></td>
-        <td>${t.category}</td>
-        <td>${t.wallet}</td>
-        <td>${t.description||''}</td>
+        <td>${esc(new Date(t.date).toLocaleString('id-ID'))}</td>
+        <td>${esc(t.user_name||t.user_phone)}</td>
+        <td><span class="badge ${t.type==='income'?'bg-success':'bg-danger'}">${esc(t.type)}</span></td>
+        <td>${esc(t.category)}</td>
+        <td>${esc(t.wallet)}</td>
+        <td>${esc(t.description||'')}</td>
         <td>${fmt(t.amount)}</td>
         <td>
-          <button class="btn btn-sm btn-outline-primary" onclick="editTx('${t.id}')">Edit</button>
-          <button class="btn btn-sm btn-outline-danger" onclick="delTx('${t.id}')">Hapus</button>
+          <button class="btn btn-sm btn-outline-primary" data-act="edit" data-id="${esc(t.id)}">Edit</button>
+          <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(t.id)}">Hapus</button>
         </td>
       </tr>
     `).join('');
+    // Delegasi event: hindari onclick inline dengan id yang bisa di-inject.
+    tbody.querySelectorAll('button[data-act]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        if (btn.dataset.act === 'edit') editTx(id);
+        else delTx(id);
+      });
+    });
     document.getElementById('txMeta').textContent = `Total ${data.meta.total} | Halaman ${data.meta.page}`;
   }
 

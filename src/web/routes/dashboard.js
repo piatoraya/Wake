@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware, requireRole } from '../auth.js';
+import { authMiddleware } from '../auth.js';
 import {
   listUsers,
   listTransactions,

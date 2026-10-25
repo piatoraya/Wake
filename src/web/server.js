@@ -10,7 +10,10 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { seedDefaultAdmins, authMiddleware, verifyToken } from './auth.js';
+import { seedDefaultAdmins, authPage } from './auth.js';
+import { csrfProtection } from './csrf.js';
+import { assertWebSecurity, warnInsecureConfig } from '../config/envCheck.js';
+import { scanCorruptCollections } from '../config/database.js';
 
 import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
@@ -69,6 +72,7 @@ export function createApp() {
   app.use(cookieParser());
   app.use(morgan('combined'));
   app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
+  app.use(csrfProtection());
 
   app.use('/assets', express.static(path.join(PROJECT_ROOT, 'public', 'assets')));
 
@@ -89,15 +93,24 @@ export function createApp() {
   app.use('/api/restore', restoreRoutes);
   app.use('/api/bot-instances', botInstanceRoutes);
 
-  app.get('/health', (req, res) => res.json({ success: true, status: 'ok' }));
+  app.get('/health', async (req, res) => {
+    let corrupt = [];
+    try {
+      corrupt = await scanCorruptCollections();
+    } catch {
+      /* jangan gagalkan health check karena error I/O */
+    }
+    res.status(corrupt.length ? 503 : 200).json({
+      success: corrupt.length === 0,
+      status: corrupt.length ? 'degraded' : 'ok',
+      // Nama koleksi yang rusak. Data lama TIDAK ditimpa — penulisan diblokir
+      // sampai file diperbaiki. Status 503 agar monitoring/proxy ikut tahu.
+      data: { corruptCollections: corrupt.map((c) => c.name) },
+    });
+  });
 
-  const guard = (req, res, next) => {
-    const token = req.cookies?.access_token;
-    const payload = token ? verifyToken(token) : null;
-    if (!payload) return res.redirect('/login');
-    req.user = payload;
-    next();
-  };
+  // Halaman dashboard dilindungi authPage (redirect ke /login bila belum login).
+  const pageGuard = authPage;
 
   app.get('/', (req, res) => res.render('home', { title: 'CatatAja', user: null }));
   app.get('/home', (req, res) => res.render('home', { title: 'CatatAja', user: null }));
@@ -107,16 +120,16 @@ export function createApp() {
   app.get('/privasi', (req, res) => res.render('privasi', { title: 'Kebijakan Privasi', user: null }));
   app.get('/syarat', (req, res) => res.render('syarat', { title: 'Syarat & Ketentuan', user: null }));
   app.get('/login', (req, res) => res.render('login', { title: 'Login' }));
-  app.get('/dashboard', guard, (req, res) => res.render('dashboard', { title: 'Dashboard', user: req.user }));
-  app.get('/transactions', guard, (req, res) => res.render('transactions', { title: 'Transaksi', user: req.user }));
-  app.get('/categories', guard, (req, res) => res.render('categories', { title: 'Kategori', user: req.user }));
-  app.get('/contacts', guard, (req, res) => res.render('contacts', { title: 'Kontak & Support', user: req.user }));
-  app.get('/users', guard, (req, res) => res.render('users', { title: 'Pengguna', user: req.user }));
-  app.get('/reports', guard, (req, res) => res.render('reports', { title: 'Laporan', user: req.user }));
-  app.get('/system', guard, (req, res) => res.render('system', { title: 'System Monitor', user: req.user }));
-  app.get('/settings', guard, (req, res) => res.render('settings', { title: 'Pengaturan', user: req.user }));
-  app.get('/admin-users', guard, (req, res) => res.render('adminUsers', { title: 'Admin Users', user: req.user }));
-  app.get('/bot-instances', guard, (req, res) => res.render('botInstances', { title: 'Bot Instances (Sultan)', user: req.user }));
+  app.get('/dashboard', pageGuard, (req, res) => res.render('dashboard', { title: 'Dashboard', user: req.user }));
+  app.get('/transactions', pageGuard, (req, res) => res.render('transactions', { title: 'Transaksi', user: req.user }));
+  app.get('/categories', pageGuard, (req, res) => res.render('categories', { title: 'Kategori', user: req.user }));
+  app.get('/contacts', pageGuard, (req, res) => res.render('contacts', { title: 'Kontak & Support', user: req.user }));
+  app.get('/users', pageGuard, (req, res) => res.render('users', { title: 'Pengguna', user: req.user }));
+  app.get('/reports', pageGuard, (req, res) => res.render('reports', { title: 'Laporan', user: req.user }));
+  app.get('/system', pageGuard, (req, res) => res.render('system', { title: 'System Monitor', user: req.user }));
+  app.get('/settings', pageGuard, (req, res) => res.render('settings', { title: 'Pengaturan', user: req.user }));
+  app.get('/admin-users', pageGuard, (req, res) => res.render('adminUsers', { title: 'Admin Users', user: req.user }));
+  app.get('/bot-instances', pageGuard, (req, res) => res.render('botInstances', { title: 'Bot Instances (Sultan)', user: req.user }));
 
   app.use((req, res) => res.status(404).render('error', { title: '404', message: 'Halaman tidak ditemukan', user: req.user || null }));
   app.use((err, req, res, next) => {
@@ -129,6 +142,9 @@ export function createApp() {
 }
 
 export async function startWebServer(port = Number(process.env.WEB_PORT || 3000)) {
+  // Fail-fast: jangan pernah menyalakan dashboard dengan secret default.
+  assertWebSecurity();
+  warnInsecureConfig();
   await seedDefaultAdmins();
   const app = createApp();
   return new Promise((resolve) => {

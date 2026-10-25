@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../auth.js';
 import { addAuditLog } from '../audit.js';
+import { validateBody, schemas } from '../validate.js';
 import { listContacts, getContact, upsertContact } from '../../config/database.js';
 
 const router = Router();
@@ -25,14 +26,10 @@ router.get('/:key', async (req, res) => {
   }
 });
 
-router.put('/:key', async (req, res) => {
+router.put('/:key', validateBody(schemas.contactUpdate), async (req, res) => {
   try {
     const before = await getContact(req.params.key);
-    const { label, value, is_active } = req.body || {};
-    // validasi ringan
-    if (value !== undefined && typeof value !== 'string') {
-      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'value harus string' } });
-    }
+    const { label, value, is_active } = req.body;
     const updated = await upsertContact(req.params.key, {
       label,
       value,

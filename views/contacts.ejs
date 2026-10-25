@@ -31,35 +31,38 @@
     const data = await res.json();
     if (!data.success) { document.getElementById('contactsForm').textContent = 'Gagal memuat'; return; }
     const container = document.getElementById('contactsForm');
-    container.innerHTML = data.data.map(c => `
+    container.innerHTML = data.data.map((c, i) => `
       <div class="mb-4 p-3 border rounded">
-        <div class="mb-2"><strong>${c.label}</strong> <small class="text-muted">(${c.key})</small></div>
+        <div class="mb-2"><strong>${esc(c.label)}</strong> <small class="text-muted">(${esc(c.key)})</small></div>
         <div class="mb-2">
           <label class="form-label">Label</label>
-          <input type="text" class="form-control" id="label_${c.key}" value="${c.label}">
+          <input type="text" class="form-control" id="label_${i}" value="${esc(c.label)}">
         </div>
         <div class="mb-2">
           <label class="form-label">Value</label>
-          <input type="text" class="form-control" id="value_${c.key}" value="${c.value || ''}" placeholder="Isi nilai kontak">
+          <input type="text" class="form-control" id="value_${i}" value="${esc(c.value || '')}" placeholder="Isi nilai kontak">
         </div>
         <div class="form-check mb-2">
-          <input type="checkbox" class="form-check-input" id="active_${c.key}" ${c.is_active ? 'checked' : ''}>
-          <label class="form-check-label" for="active_${c.key}">Aktif (tampil di landing page)</label>
+          <input type="checkbox" class="form-check-input" id="active_${i}" ${c.is_active ? 'checked' : ''}>
+          <label class="form-check-label" for="active_${i}">Aktif (tampil di landing page)</label>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="saveContact('${c.key}')">Simpan</button>
-        <span id="status_${c.key}" class="ms-2 text-success"></span>
+        <button class="btn btn-primary btn-sm" data-act="save" data-idx="${i}" data-key="${esc(c.key)}">Simpan</button>
+        <span id="status_${i}" class="ms-2 text-success"></span>
       </div>
     `).join('');
+    container.querySelectorAll('button[data-act="save"]').forEach((btn) => {
+      btn.addEventListener('click', () => saveContact(btn.dataset.key, Number(btn.dataset.idx)));
+    });
   }
-  async function saveContact(key) {
+  async function saveContact(key, idx) {
     const body = {
-      label: document.getElementById('label_' + key).value,
-      value: document.getElementById('value_' + key).value,
-      is_active: document.getElementById('active_' + key).checked,
+      label: document.getElementById('label_' + idx).value,
+      value: document.getElementById('value_' + idx).value,
+      is_active: document.getElementById('active_' + idx).checked,
     };
-    const res = await fetch('/api/contacts/' + key, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body), credentials:'same-origin'});
+    const res = await fetch('/api/contacts/' + encodeURIComponent(key), {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body), credentials:'same-origin'});
     const data = await res.json();
-    const st = document.getElementById('status_' + key);
+    const st = document.getElementById('status_' + idx);
     if (data.success) { st.textContent = 'Tersimpan'; setTimeout(()=>st.textContent='',2000); }
     else { st.textContent = data.error?.message || 'Gagal'; st.classList.remove('text-success'); st.classList.add('text-danger'); }
   }

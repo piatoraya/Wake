@@ -51,18 +51,18 @@
     if (!data.success) return;
     const d = data.data;
     document.getElementById('botStatus').innerHTML = `
-      <p>Status: <strong>${d.status}</strong></p>
-      <p>Nomor: ${d.phone || '-'}</p>
-      <p>Metode: ${d.method || '-'}</p>
-      <p>Uptime: ${d.uptime}s</p>
-      <p>Error terakhir: ${d.lastError || '-'}</p>
+      <p>Status: <strong>${esc(d.status)}</strong></p>
+      <p>Nomor: ${esc(d.phone || '-')}</p>
+      <p>Metode: ${esc(d.method || '-')}</p>
+      <p>Uptime: ${Number(d.uptime)}s</p>
+      <p>Error terakhir: ${esc(d.lastError || '-')}</p>
     `;
     const g = d.gemini;
     if (g) {
       document.getElementById('geminiStatus').innerHTML = `
-        <p>Models: ${(g.models||[]).join(', ')}</p>
-        <p>Keys: ${(g.keys||[]).map(k=>`#${k.index} ${k.masked} ${k.invalid?'(invalid)':''}`).join('<br>')}</p>
-        <p>Exhausted pairs: ${(g.exhaustedPairs||[]).join(', ') || '-'}</p>
+        <p>Models: ${esc((g.models||[]).join(', '))}</p>
+        <p>Keys: ${(g.keys||[]).map(k=>`#${Number(k.index)} ${esc(k.masked)} ${k.invalid?'(invalid)':''}`).join('<br>')}</p>
+        <p>Exhausted pairs: ${esc((g.exhaustedPairs||[]).join(', ') || '-')}</p>
       `;
     } else {
       document.getElementById('geminiStatus').textContent = 'Tidak tersedia';
@@ -73,7 +73,7 @@
     const data = await res.json();
     if (!data.success) return;
     document.getElementById('auditBody').innerHTML = data.data.map(a => `
-      <tr><td>${new Date(a.created_at).toLocaleString('id-ID')}</td><td>${a.admin_id}</td><td>${a.action}</td><td>${a.entity} ${a.entity_id||''}</td></tr>
+      <tr><td>${esc(new Date(a.created_at).toLocaleString('id-ID'))}</td><td>${esc(a.admin_id)}</td><td>${esc(a.action)}</td><td>${esc(a.entity)} ${esc(a.entity_id||'')}</td></tr>
     `).join('');
   }
   loadStatus(); loadAudit();

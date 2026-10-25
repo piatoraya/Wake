@@ -67,22 +67,35 @@
     if (!data.success) return;
     document.getElementById('instanceBody').innerHTML = data.data.map(i => `
       <tr>
-        <td>${i.name}</td>
-        <td>${i.owner_phone}</td>
-        <td>${i.slug}</td>
-        <td>${i.phone||'-'}</td>
-        <td><code>${i.session_dir}</code></td>
-        <td>${i.status}${i.pairing_code ? ' (kode: '+i.pairing_code+')' : ''}</td>
+        <td>${esc(i.name)}</td>
+        <td>${esc(i.owner_phone)}</td>
+        <td>${esc(i.slug)}</td>
+        <td>${esc(i.phone||'-')}</td>
+        <td><code>${esc(i.session_dir)}</code></td>
+        <td>${esc(i.status)}${i.pairing_code ? ' (kode: '+esc(i.pairing_code)+')' : ''}</td>
         <td>
-          <button class="btn btn-sm btn-outline-success" onclick="startInst('${i.bot_id}','${i.connection_method||'pairing'}')">Start</button>
-          <button class="btn btn-sm btn-outline-primary" onclick="pairInst('${i.bot_id}')">Pairing Code</button>
-          <button class="btn btn-sm btn-outline-info" onclick="showQr('${i.bot_id}')">QR</button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="stopInst('${i.bot_id}')">Stop</button>
-          <button class="btn btn-sm btn-outline-warning" onclick="resetAuth('${i.bot_id}')">Reset Auth</button>
-          <button class="btn btn-sm btn-outline-danger" onclick="delInstance('${i.bot_id}')">Hapus</button>
+          <button class="btn btn-sm btn-outline-success" data-act="start" data-id="${esc(i.bot_id)}" data-method="${esc(i.connection_method||'pairing')}">Start</button>
+          <button class="btn btn-sm btn-outline-primary" data-act="pair" data-id="${esc(i.bot_id)}">Pairing Code</button>
+          <button class="btn btn-sm btn-outline-info" data-act="qr" data-id="${esc(i.bot_id)}">QR</button>
+          <button class="btn btn-sm btn-outline-secondary" data-act="stop" data-id="${esc(i.bot_id)}">Stop</button>
+          <button class="btn btn-sm btn-outline-warning" data-act="reset" data-id="${esc(i.bot_id)}">Reset Auth</button>
+          <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(i.bot_id)}">Hapus</button>
         </td>
       </tr>
     `).join('');
+    document.getElementById('instanceBody').querySelectorAll('button[data-act]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        switch (btn.dataset.act) {
+          case 'start': return startInst(id, btn.dataset.method);
+          case 'pair': return pairInst(id);
+          case 'qr': return showQr(id);
+          case 'stop': return stopInst(id);
+          case 'reset': return resetAuth(id);
+          case 'del': return delInstance(id);
+        }
+      });
+    });
   }
   document.getElementById('createForm').addEventListener('submit', async (e) => {
     e.preventDefault();

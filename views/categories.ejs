@@ -66,18 +66,25 @@
     const tbody = document.getElementById('catBody');
     tbody.innerHTML = cats.map(c => `
       <tr>
-        <td>${c.name}</td>
-        <td>${c.type}</td>
-        <td>${c.parent_id ? (cats.find(x=>x.id===c.parent_id)?.name || '-') : '-'}</td>
+        <td>${esc(c.name)}</td>
+        <td>${esc(c.type)}</td>
+        <td>${esc(c.parent_id ? (cats.find(x=>x.id===c.parent_id)?.name || '-') : '-')}</td>
         <td>${c.is_active ? 'Ya' : 'Tidak'}</td>
         <td>
-          <button class="btn btn-sm btn-outline-primary" onclick="editCat('${c.id}')">Edit</button>
-          <button class="btn btn-sm btn-outline-danger" onclick="delCat('${c.id}')">Hapus</button>
+          <button class="btn btn-sm btn-outline-primary" data-act="edit" data-id="${esc(c.id)}">Edit</button>
+          <button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${esc(c.id)}">Hapus</button>
         </td>
       </tr>
     `).join('');
+    tbody.querySelectorAll('button[data-act]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        if (btn.dataset.act === 'edit') editCat(id);
+        else delCat(id);
+      });
+    });
     const parentSel = document.getElementById('catParent');
-    parentSel.innerHTML = '<option value="">(tidak ada)</option>' + cats.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    parentSel.innerHTML = '<option value="">(tidak ada)</option>' + cats.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
   }
   function editCat(id) {
     const c = cats.find(x=>x.id===id);

@@ -37,11 +37,11 @@ import qrcode from 'qrcode-terminal';
 import { parseMessage, parseReceiptImage, getRotationStatus, generateText } from './services/gemini.js';
 import { buildItemSummary, buildReceiptTransaction } from './services/receipt.js';
 import { reportAiFailureToOwner } from './services/owner.js';
-import { normalizePhoneNumber } from './utils/phone.js';
+import { normalizePhoneNumber, isOwner } from './utils/phone.js';
 import { normalizeTimezone, timezoneLabel } from './utils/datetime.js';
-import { getFooter, setFooter, getAppConfig } from './config/appConfig.js';
+import { getFooter, setFooter } from './config/appConfig.js';
 import { sendBackup, pruneOldBackups } from './services/backup.js';
-import { checkAndConsumeQuota, canUseBackup } from './services/quota.js';
+import { checkAndConsumeQuota, canUseBackup, isTierEnabled } from './services/quota.js';
 import { startWebServer } from './web/server.js';
 import { setBotState } from './web/state.js';
 import {
@@ -577,31 +577,21 @@ const OWNER_MENU_TEXT = (prefix) =>
  * Menangani perintah teks yang diawali prefix (mis. `!rekap`).
  * @returns {Promise<boolean>} true bila pesan adalah perintah yang dikenali
  */
-async function isTierEnabled() {
-  try {
-    const cfg = await getAppConfig();
-    return !!(cfg && cfg.tier_enabled);
-  } catch {
-    return false;
-  }
-}
-
 async function handleCommand(prefix, rawText, ctx) {
   const { jid, phone, name, msg } = ctx;
   const timezone = ctx.timezone || CONFIG.timezone;
-  const owner = normalizePhoneNumber(process.env.OWNER_NUMBER || '') || (process.env.OWNER_NUMBER || '').replace(/\D/g, '');
   const [rawCmd, ...args] = rawText.slice(prefix.length).trim().split(/\s+/);
   const cmd = (rawCmd || '').toLowerCase();
   const reply = async (text) => {
-  const footer = await getFooter();
-  return sock.sendMessage(jid, { text: `${text}\n\n${footer}` }, { quoted: msg });
-};
+    const footer = await getFooter();
+    return sock.sendMessage(jid, { text: `${text}\n\n${footer}` }, { quoted: msg });
+  };
 
   switch (cmd) {
     /* -------------------------------------------------------- owner menu */
     case 'menu':
     case 'ownermenu': {
-      if (owner && phone !== owner) {
+      if (!isOwner(phone)) {
         await reply('❌ Fitur ini khusus owner.');
         return true;
       }
@@ -632,7 +622,7 @@ async function handleCommand(prefix, rawText, ctx) {
     case 'ai':
     case 'gemini':
     case 'status': {
-      if (owner && phone !== owner) {
+      if (!isOwner(phone)) {
         await reply('❌ Fitur ini khusus owner/admin bot.');
         return true;
       }
@@ -773,7 +763,7 @@ async function handleCommand(prefix, rawText, ctx) {
         await reply('❌ Fitur ini sedang dinonaktifkan.');
         return true;
       }
-      if (phone !== (normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER)) {
+      if (!isOwner(phone)) {
         await reply('❌ Hanya owner yang boleh mengubah level.');
         return true;
       }
@@ -796,7 +786,7 @@ async function handleCommand(prefix, rawText, ctx) {
         await reply('❌ Fitur ini sedang dinonaktifkan.');
         return true;
       }
-      if (phone !== (normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER)) {
+      if (!isOwner(phone)) {
         await reply('❌ Hanya owner yang boleh mengubah limit bot.');
         return true;
       }
@@ -836,8 +826,7 @@ async function handleCommand(prefix, rawText, ctx) {
     case 'user':
     case 'users':
     case 'listuser': {
-      const ownerNum = normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER;
-      if (phone !== ownerNum) {
+      if (!isOwner(phone)) {
         await reply('❌ Fitur ini khusus owner.');
         return true;
       }
@@ -866,8 +855,7 @@ async function handleCommand(prefix, rawText, ctx) {
       const targetArg = args[0] ? normalizePhoneNumber(args[0]) : null;
       let targetPhone = phone;
       if (targetArg && targetArg !== phone) {
-        const ownerNum = normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER;
-        if (phone !== ownerNum) {
+        if (!isOwner(phone)) {
           await reply('❌ Hanya owner yang bisa melihat data user lain.');
           return true;
         }
@@ -900,8 +888,7 @@ async function handleCommand(prefix, rawText, ctx) {
     /* ------------------------------------------------------------- setfooter */
     case 'setfooter':
     case 'footer': {
-      const ownerNum = normalizePhoneNumber(process.env.OWNER_NUMBER || '') || process.env.OWNER_NUMBER;
-      if (phone !== ownerNum) {
+      if (!isOwner(phone)) {
         await reply('❌ Hanya owner yang bisa mengubah footer.');
         return true;
       }
@@ -997,7 +984,7 @@ async function handleCommand(prefix, rawText, ctx) {
 
     /* -------------------------------------------------------------- reload */
     case 'reload': {
-      if (owner && phone !== owner) {
+      if (!isOwner(phone)) {
         await reply('❌ Fitur ini khusus owner/admin bot.');
         return true;
       }
@@ -1010,7 +997,7 @@ async function handleCommand(prefix, rawText, ctx) {
     case 'addapi':
     case 'addapikey':
     case 'tambahapi': {
-      if (owner && phone !== owner) {
+      if (!isOwner(phone)) {
         await reply('❌ Fitur ini khusus owner/admin bot.');
         return true;
       }
@@ -1866,21 +1853,6 @@ function renderQr(qr) {
   console.log('==================================================\n');
   return qrText;
 }
-
-/**
- * Normalisasi nomor telepon ke format internasional (E.164 tanpa '+').
- *   "0812-3456-7890"  -> "6281234567890"   (asumsi Indonesia)
- *   "+62 812 3456..." -> "6281234567890"
- *   "6281234567890"   -> "6281234567890"
- *
- * Aturan: nomor Indonesia (seluler) selalu diawali "8" setelah kode negara 62.
- * Input tanpa awalan 0/62 hanya diterima bila memang diawali "8", supaya
- * nomor asing/typo tidak diam-diam diubah menjadi nomor Indonesia.
- *
- * Implementasinya ada di src/utils/phone.js (dipakai juga oleh services/owner.js).
- *
- * @returns {string|null} null bila tidak valid
- */
 
 /**
  * Tentukan nomor bot: dari .env bila ada, jika tidak tanya lewat terminal.

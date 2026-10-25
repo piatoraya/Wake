@@ -40,19 +40,37 @@ Dibangun dengan **Node.js (ESM)** + **Baileys (Pairing Code / QR Code)** + **Goo
 ├── src/
 │   ├── index.js                 # Entry point: Baileys + routing intent + cronjob
 │   ├── config/
-│   │   └── database.js          # Helper baca/tulis JSON lokal (atomic + queue)
+│   │   ├── database.js          # Helper baca/tulis JSON lokal (atomic + queue)
+│   │   ├── appConfig.js         # Konfigurasi runtime (footer, tier_enabled)
+│   │   └── envCheck.js          # Validasi .env (fail-fast secret & password)
 │   ├── services/
 │   │   ├── gemini.js            # Integrasi @google/genai (teks, audio & gambar/struk)
 │   │   ├── receipt.js           # Logika pembaca struk (wallet, deskripsi, transaksi)
 │   │   ├── owner.js             # Laporan otomatis ke owner + anti spam
-│   │   ├── excel.js             # JSON → .xlsx (ExcelJS)
+│   │   ├── quota.js             # Kuota tier free/basic/premium/sultan (atomik)
+│   │   ├── sultanBotManager.js  # Kelola instance bot tambahan (tier Sultan)
+│   │   ├── excel.js             # JSON → .xlsx (ExcelJS) + grafik PNG (sharp)
 │   │   └── backup.js            # Buat & kirim file backup via WhatsApp
-│   └── utils/
-│       └── phone.js             # Normalisasi nomor telepon Indonesia (62...)
+│   ├── utils/
+│   │   ├── phone.js             # Normalisasi nomor Indonesia + cek owner
+│   │   └── datetime.js          # Zona waktu & format tanggal/jam
+│   └── web/                     # Dashboard admin (Express + EJS)
+│       ├── server.js            # Bootstrap Express: helmet, CORS, CSRF, router
+│       ├── auth.js              # Login JWT, bcrypt, requireRole
+│       ├── csrf.js              # Proteksi CSRF (double-submit cookie)
+│       ├── validate.js          # Skema validasi request (zod)
+│       ├── audit.js             # Pencatatan audit log
+│       ├── settings.js          # Pengaturan dashboard
+│       ├── state.js             # Status bot untuk halaman System
+│       └── routes/              # 14 router REST (/api/*)
+├── views/                       # 19 template EJS (landing + dashboard)
+├── public/assets/               # Aset statis (template, JS helper safe-dom & api-client)
 ├── data/                        # (otomatis) users/transactions/wallets/budgets .json
 ├── baileys_auth/                # (otomatis) sesi WhatsApp
 ├── backups/                     # (otomatis) file .xlsx sementara
-└── tests/                       # skrip uji fitur (butuh API key aktif)
+└── tests/
+    ├── unit/                    # Uji otomatis (node:test) — dijalankan `npm test`
+    └── test-*.js                # Skrip uji manual fitur (butuh API key aktif)
 ```
 
 ---
@@ -62,8 +80,18 @@ Dibangun dengan **Node.js (ESM)** + **Baileys (Pairing Code / QR Code)** + **Goo
 ```bash
 npm install
 cp .env.example .env
-# edit .env: isi GEMINI_API_KEYS (boleh 3+ key, pisah koma) dan BOT_NUMBER
+# edit .env:
+#   - GEMINI_API_KEYS  (boleh 3+ key, pisah koma)
+#   - BOT_NUMBER       (bila memakai metode pairing)
+#   - JWT_SECRET       (WAJIB, min. 32 karakter — lihat "Validasi konfigurasi")
+#   - WEB_OWNER_PASSWORD / WEB_ADMIN_PASSWORD (WAJIB diganti dari default)
 npm start
+```
+
+Jalankan uji otomatis (tidak butuh API key):
+
+```bash
+npm test
 ```
 
 Saat `npm start`, bot menanyakan metode koneksi lebih dulu:
@@ -395,6 +423,31 @@ Catatan:
 { "id": "uuid", "user_phone": "62812xxx", "category": "Transport", "limit": 500000, "created_at": "..." }
 ```
 
+### Kalau file JSON rusak
+
+Saat satu file koleksi tidak bisa di-parse, aplikasi **tidak** mengosongkannya:
+
+1. Isi asli disalin ke `<nama>.json.corrupt-<timestamp>` di folder `data/`.
+2. Log menampilkan `[DB] users.json KORUP: ...` beserta lokasi salinan.
+3. Bot **tetap jalan** (koleksi dibaca sebagai kosong agar tidak crash).
+4. **Semua penulisan ke koleksi itu ditolak** dengan pesan jelas — data lama
+   tidak mungkin tertimpa array kosong.
+5. `GET /health` membalas **503** dengan `data.corruptCollections: ["users"]`.
+
+Cara memperbaiki (pilih salah satu):
+
+```bash
+# a) Perbaiki file JSON-nya (mis. dari salinan .corrupt-*) lalu restart.
+#    Penulisan otomatis normal lagi setelah file valid.
+cp data/users.json.corrupt-<ts> data/users.json   # lalu edit bagian yang rusak
+
+# b) Mulai dari kosong: pindahkan file rusaknya.
+mv data/users.json data/users.json.rusak
+```
+
+Daftar koleksi yang sedang korup juga bisa dilihat dari kode:
+`listCorruptCollections()` di `src/config/database.js`.
+
 ---
 
 ## ⏰ Cronjob
@@ -416,6 +469,41 @@ Set **`KEEP_BACKUP_FILE=true`** bila ingin file `.xlsx` tetap tersimpan di `back
 - `.env`, `data/`, `baileys_auth/`, dan `backups/` sudah masuk `.gitignore` — **jangan pernah commit**.
 - API key Gemini hanya dipakai di server, tidak pernah dikirim ke WhatsApp.
 - Bot mengabaikan grup/broadcast dan hanya merespons chat pribadi.
+
+### Validasi konfigurasi (fail-fast)
+
+Aplikasi **menolak start** bila konfigurasi web masih berbahaya. Yang diperiksa
+saat boot (`src/config/envCheck.js`):
+
+| Variabel | Aturan |
+|---|---|
+| `JWT_SECRET` | Wajib, minimal **32 karakter**, tidak boleh nilai contoh `.env.example` |
+| `WEB_OWNER_PASSWORD` / `WEB_ADMIN_PASSWORD` | Wajib saat admin pertama di-seed, minimal 8 karakter, tidak boleh `owner123`/`admin123` |
+
+Buat secret acak:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+### Yang sudah diterapkan di dashboard
+
+- **Helmet + CSP**, CORS berbatas `WEB_ORIGIN`, rate limit global & login.
+- **CSRF** double-submit cookie: semua request non-GET wajib menyertakan
+  header `X-CSRF-Token` (otomatis oleh `api-client.js`).
+- **Cookie sesi** `httpOnly` + `SameSite=Lax`, dan `Secure` otomatis aktif
+  bila `NODE_ENV=production` (atau `COOKIE_SECURE=true`).
+- **Validasi input** semua endpoint mutasi dengan zod (`src/web/validate.js`).
+- **Otorisasi berlapis**: `requireRole('owner')` untuk aksi sensitif
+  (reset auth instance, hapus admin, restore backup, kelola admin user).
+- **Escape XSS**: semua data dinamis di-render lewat `esc()`
+  (`public/assets/static/js/safe-dom.js`), tanpa `innerHTML` mentah dan tanpa
+  `onclick` inline.
+- **Audit log** untuk aksi mutasi penting (login, CRUD, kontrol bot, restore).
+- **Kuota atomik**: pemakaian kuota dibungkus satu transaksi tulis sehingga
+  request bersamaan tidak bisa melewati batas tier.
+- **Anti data-loss**: file JSON yang korup tidak pernah ditimpa; penulisan
+  diblokir dan salinan asli disimpan (lihat *Kalau file JSON rusak*).
 
 ---
 

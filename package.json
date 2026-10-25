@@ -9,7 +9,9 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --test \"tests/unit/**/*.test.js\"",
+    "test:watch": "node --test --watch \"tests/unit/**/*.test.js\""
   },
   "keywords": [
     "whatsapp-bot",
@@ -39,6 +41,7 @@
     "pdfkit": "^0.20.2",
     "pino": "^10.4.0",
     "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.35.5",
     "zod": "^4.6.7"
   }
 }

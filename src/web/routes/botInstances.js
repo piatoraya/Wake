@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware, requireRole } from '../auth.js';
 import { addAuditLog } from '../audit.js';
-import { getUser } from '../../config/database.js';
+import { validateBody, schemas } from '../validate.js';
 import {
   listInstances,
   createInstance,
@@ -18,10 +18,12 @@ import {
 const router = Router();
 router.use(authMiddleware);
 
+// Semua route di bawah ini hanya untuk owner/admin dashboard.
+// User biasa tidak punya akses ke dashboard web sama sekali.
+router.use(requireRole('owner', 'admin'));
+
 router.get('/', async (req, res) => {
   try {
-    const ownerPhone = req.user.role === 'owner' ? null : undefined;
-    // admin/owner lihat semua; user biasa (bukan admin) tidak akses web ini
     const data = await listInstances();
     res.json({ success: true, data });
   } catch (e) {
@@ -29,16 +31,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', validateBody(schemas.botInstanceCreate), async (req, res) => {
   try {
-    const { owner_phone, name, phone, method } = req.body || {};
-    if (!owner_phone || !name) {
-      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'owner_phone dan name wajib' } });
-    }
-    // hanya owner/admin boleh membuat via web
-    if (req.user.role !== 'owner' && req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Akses ditolak' } });
-    }
+    const { owner_phone, name, phone, method } = req.body;
     const meta = await createInstance(owner_phone, name, phone, method);
     await addAuditLog({ adminId: req.user.sub, action: 'create', entity: 'bot_instance', entityId: meta.bot_id, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: meta });
@@ -47,10 +42,11 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.post('/:id/start', async (req, res) => {
+router.post('/:id/start', validateBody(schemas.botStart), async (req, res) => {
   try {
-    const { method, force } = req.body || {};
+    const { method, force } = req.body;
     const result = await startInstance(req.params.id, method, !!force);
+    await addAuditLog({ adminId: req.user.sub, action: 'start', entity: 'bot_instance', entityId: req.params.id, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: result });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
@@ -70,6 +66,7 @@ router.get('/:id/qr', async (req, res) => {
 router.post('/:id/pairing-code', async (req, res) => {
   try {
     const result = await requestPairingCode(req.params.id);
+    await addAuditLog({ adminId: req.user.sub, action: 'pairing_code', entity: 'bot_instance', entityId: req.params.id, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: result });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
@@ -79,6 +76,7 @@ router.post('/:id/pairing-code', async (req, res) => {
 router.post('/:id/reset-auth', requireRole('owner'), async (req, res) => {
   try {
     const result = await resetAuth(req.params.id);
+    await addAuditLog({ adminId: req.user.sub, action: 'reset_auth', entity: 'bot_instance', entityId: req.params.id, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: result });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
@@ -88,16 +86,18 @@ router.post('/:id/reset-auth', requireRole('owner'), async (req, res) => {
 router.post('/:id/stop', async (req, res) => {
   try {
     const result = await stopInstance(req.params.id);
+    await addAuditLog({ adminId: req.user.sub, action: 'stop', entity: 'bot_instance', entityId: req.params.id, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: result });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', validateBody(schemas.botInstanceUpdate), async (req, res) => {
   try {
-    const { phone } = req.body || {};
+    const { phone } = req.body;
     const updated = await updateInstancePhone(req.params.id, phone);
+    await addAuditLog({ adminId: req.user.sub, action: 'update', entity: 'bot_instance', entityId: req.params.id, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: updated });
   } catch (e) {
     res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: e.message } });

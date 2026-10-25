@@ -6,8 +6,6 @@ backups/
 *.log
 .DS_Store
 
-# tests
-tests/
 
 # sessions (auth)
 sessions/

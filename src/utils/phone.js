@@ -62,3 +62,29 @@ export function phoneToJid(phone) {
 export function ownerJid(raw = process.env.OWNER_NUMBER || '') {
   return phoneToJid(raw);
 }
+
+/**
+ * Nomor owner yang sudah dinormalisasi (62...), atau null bila belum diisi.
+ * Dibaca tiap kali dipanggil agar perubahan .env + `!reload` langsung berlaku.
+ * @param {string} [raw] override nomor owner
+ * @returns {string|null}
+ */
+export function ownerPhone(raw = process.env.OWNER_NUMBER || '') {
+  return normalizePhoneNumber(raw);
+}
+
+/**
+ * Cek apakah sebuah nomor adalah owner bot.
+ * Satu-satunya sumber kebenaran untuk pengecekan owner di seluruh kode.
+ *
+ * @param {string} phone nomor apa pun (08xx, 62xx, +62 xx)
+ * @param {string} [raw] override nomor owner (default dari .env)
+ * @returns {boolean}
+ */
+export function isOwner(phone, raw = process.env.OWNER_NUMBER || '') {
+  const owner = normalizePhoneNumber(raw);
+  if (!owner) return false;
+  const candidate = normalizePhoneNumber(phone);
+  if (!candidate) return false;
+  return candidate === owner;
+}

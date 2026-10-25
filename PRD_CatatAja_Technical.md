@@ -6,14 +6,19 @@
 **Versi:** 1.0  
 **Status:** Siap Implementasi  
 **Target Pembaca:** Developer, Tech Lead, AI Coding Assistant (Cursor/Copilot)  
-**Basis Teknologi:** Node.js (ESM) · Baileys (WhatsApp Multi-Session) · Telegraf/Telegram (opsional) · File-Based JSON Storage · Mazer Admin Dashboard (Bootstrap 5)
+**Basis Teknologi:** Node.js (ESM) · Baileys (WhatsApp Multi-Session) · Express + EJS · File-Based JSON Storage · Bootstrap 5
+
+> **Catatan revisi (v1.1):** Integrasi Telegram/Telegraf **tidak diimplementasikan** dan
+> dihapus dari lingkup. Kanal yang didukung hanya **WhatsApp (Baileys)**. Dashboard
+> dibangun dengan **Express 5 + EJS + Bootstrap 5**, bukan template Mazer penuh.
+> Nama tier mengikuti implementasi: **free / basic / premium / sultan**.
 
 ---
 
 ## 1. Executive Summary & Architecture Overview
 
 ### 1.1 Latar Belakang
-CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui WhatsApp dan Telegram. Pengguna mencatat transaksi dengan teks natural, foto struk (OCR), dan voice note. Untuk mengoperasikan platform secara efisien dibutuhkan **Web Dashboard Admin** terpusat untuk memantau KPI, mengelola pengguna & tier, men-troubleshoot parsing AI, mengelola kontak support, serta mengelola **instansi bot mandiri milik user Sultan**.
+CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui **WhatsApp**. Pengguna mencatat transaksi dengan teks natural, foto struk (OCR), dan voice note. Untuk mengoperasikan platform secara efisien dibutuhkan **Web Dashboard Admin** terpusat untuk memantau KPI, mengelola pengguna & tier, men-troubleshoot parsing AI, mengelola kontak support, serta mengelola **instansi bot mandiri milik user Sultan**.
 
 ### 1.2 Tujuan
 1. Menyediakan antarmuka visual (Mazer) untuk monitoring dan operasional.
@@ -26,12 +31,12 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                      CatatAja Platform                       │
-├──────────────┬──────────────┬──────────────┬────────────────┤
-│  WhatsApp    │  Telegram    │  Web Admin   │  Landing Page  │
-│  (Baileys)   │  (Bot API)   │  (Mazer UI)  │  catataja.id   │
-└──────┬───────┴──────┬───────┴──────┬───────┴────────┬───────┘
-       │              │              │                │
-       └──────────────┴──────────────┴────────────────┘
+├──────────────────────────┬──────────────────┬────────────────┤
+│  WhatsApp                │  Web Admin       │  Landing Page  │
+│  (Baileys, multi-session)│  (Express + EJS) │  catataja.id   │
+└────────────┬─────────────┴────────┬─────────┴────────┬───────┘
+             │                      │                  │
+             └──────────────────────┴──────────────────┘
                              │
                     ┌────────┴────────┐
                     │  Node.js Core   │
@@ -157,10 +162,10 @@ CatatAja adalah layanan pencatatan keuangan berbasis AI yang diakses melalui Wha
     "sort_order": 1
   },
   {
-    "key": "telegram",
-    "label": "Telegram",
+    "key": "email_support",
+    "label": "Email Support",
     "value": "",
-    "is_active": false,
+    "is_active": true,
     "sort_order": 2
   }
 ]
@@ -343,7 +348,7 @@ Kolom:
 - Bot Name, Owner, Phone, Status, Session Dir, Last Seen, Actions (Pairing, Restart, Delete).
 
 ### 5.5 Contacts & Support (CRUD)
-Form edit kontak CS (WA, Telegram, Email, Jam Operasional, FAQ link) yang tampil dinamis di landing page via `/api/public/contacts`.
+Form edit kontak CS (WA, Email, Jam Operasional, FAQ link) yang tampil dinamis di landing page via `/api/public/contacts`.
 
 ### 5.6 Backup & Restore (UI)
 - Tombol **Download Backup (JSON)** per user / global.
