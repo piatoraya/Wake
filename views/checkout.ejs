@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="id" data-bs-theme="light">
+<head>
+  <%- include('partials/head') %>
+  <style>
+    .co-card { border:none;border-radius:16px; }
+    .btn-ca { background:#22c55e;border:none;color:#fff; }
+    .btn-ca:hover { background:#16a34a;color:#fff; }
+    .btn-ca:disabled { background:#94a3b8; }
+    .sum-row { display:flex;justify-content:space-between;padding:.35rem 0; }
+    .sum-total { border-top:1px solid #e2e8f0;margin-top:.5rem;padding-top:.6rem;font-weight:700;font-size:1.1rem; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="main" style="margin-left:0">
+    <%- include('partials/publicNav') %>
+    <section class="container py-5" style="max-width:960px">
+      <div class="text-center mb-4">
+        <h1 class="fw-bold h3">Checkout</h1>
+        <p class="text-muted mb-0">Selesaikan langgananmu.</p>
+      </div>
+
+      <div class="row g-4">
+        <!-- Kolom kiri: form -->
+        <div class="col-lg-7">
+          <div class="card co-card shadow-sm">
+            <div class="card-body p-4">
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Paket</label>
+                <select class="form-select" id="plan">
+                  <% paidPlans.forEach(function (p) { %>
+                  <option value="<%= p.slug %>" <%= p.slug === initialPlan ? 'selected' : '' %>><%= p.label %></option>
+                  <% }); %>
+                </select>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Durasi</label>
+                <div class="btn-group w-100" role="group" aria-label="Pilih durasi">
+                  <% durations.forEach(function (m, i) { %>
+                  <button type="button" class="btn btn-outline-success dur-btn<%= m === initialMonths ? ' active' : '' %>"
+                          data-months="<%= m %>"><%= m %> bln</button>
+                  <% }); %>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-semibold" for="phone">Nomor WhatsApp</label>
+                <input type="tel" class="form-control" id="phone" placeholder="08xxxxxxxxxx" autocomplete="tel">
+                <div class="form-text">Nomor yang dipakai bot untuk mencatat transaksi.</div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-semibold" for="name">Nama <span class="text-muted">(opsional)</span></label>
+                <input type="text" class="form-control" id="name" maxlength="80" autocomplete="name">
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-semibold" for="voucher">Kode Voucher <span class="text-muted">(opsional)</span></label>
+                <div class="input-group">
+                  <input type="text" class="form-control" id="voucher" maxlength="40" placeholder="HEMAT10">
+                  <button class="btn btn-outline-success" type="button" id="apply-voucher">Terapkan</button>
+                </div>
+                <div class="form-text" id="voucher-msg"></div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Metode Pembayaran</label>
+                <select class="form-select" id="method">
+                  <option value="">Memuat kanal pembayaran…</option>
+                </select>
+                <div class="form-text" id="channel-msg"></div>
+              </div>
+
+              <div id="error-box" class="alert alert-danger d-none" role="alert"></div>
+
+              <button type="button" class="btn btn-ca w-100 py-2 fw-semibold" id="pay-btn" disabled>
+                Pilih paket &amp; metode dulu
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Kolom kanan: ringkasan, angka dari server -->
+        <div class="col-lg-5">
+          <div class="card co-card shadow-sm">
+            <div class="card-body p-4">
+              <h6 class="fw-bold mb-3">Ringkasan</h6>
+              <div class="sum-row"><span>Paket</span><span id="s-plan">-</span></div>
+              <div class="sum-row"><span>Durasi</span><span id="s-months">-</span></div>
+              <div class="sum-row"><span>Harga dasar</span><span id="s-base">-</span></div>
+              <div class="sum-row text-success" id="s-dur-row"><span>Diskon durasi</span><span id="s-dur">-</span></div>
+              <div class="sum-row text-success" id="s-vou-row"><span>Voucher</span><span id="s-vou">-</span></div>
+              <div class="sum-row sum-total"><span>Total</span><span id="s-total">-</span></div>
+              <p class="text-muted small mt-3 mb-0">Harga dihitung di server dan tidak bisa diubah dari halaman ini.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+
+<script id="checkout-data" type="application/json"><%- JSON.stringify({ plans: paidPlans, durations: durations, payment_enabled: paymentEnabled }) %></script>
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+(function () {
+  var boot = JSON.parse(document.getElementById('checkout-data').textContent || '{}');
+  var plans = boot.plans || [];
+  var durations = boot.durations || [1];
+  var paymentEnabled = boot.payment_enabled !== false;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { plan: plans.length ? plans[0].slug : '', months: Number(durations[0]) || 1, voucher: '', method: '' };
+
+  function fmt(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+  function showErr(msg) { var b = $('error-box'); if (!msg) { b.classList.add('d-none'); return; } b.textContent = msg; b.classList.remove('d-none'); }
+
+  function planLabel(slug) {
+    var p = plans.filter(function (x) { return x.slug === slug; })[0];
+    return p ? p.label : slug;
+  }
+
+  function renderSummary(pricing) {
+    if (!pricing) return;
+    $('s-plan').textContent = planLabel(state.plan);
+    $('s-months').textContent = state.months + ' bulan';
+    $('s-base').textContent = fmt(pricing.base_amount);
+    $('s-dur').textContent = pricing.duration_discount_amount > 0 ? '-' + fmt(pricing.duration_discount_amount) : '-';
+    $('s-dur-row').style.display = pricing.duration_discount_amount > 0 ? '' : 'none';
+    $('s-vou').textContent = pricing.voucher_discount_amount > 0 ? '-' + fmt(pricing.voucher_discount_amount) : '-';
+    $('s-vou-row').style.display = pricing.voucher_discount_amount > 0 ? '' : 'none';
+    $('s-total').textContent = fmt(pricing.final_amount);
+  }
+
+  // Harga selalu diminta ke server; client tidak pernah menghitung sendiri.
+  function refreshQuote() {
+    if (!state.plan) return;
+    return apiPost('/api/pricing/quote', {
+      plan_slug: state.plan,
+      months: state.months,
+      voucher_code: state.voucher || undefined,
+    }).then(function (res) {
+      var q = res.data || {};
+      if (!q.ok) { showErr(q.reason || 'Kombinasi paket/voucher tidak valid.'); return; }
+      showErr('');
+      renderSummary(q.pricing);
+    }).catch(function (e) {
+      showErr(e.message || 'Gagal menghitung harga.');
+    });
+  }
+
+  function loadChannels() {
+    var sel = $('method');
+    return apiGet('/api/pricing/channels').then(function (res) {
+      var ch = (res.data || []);
+      if (!ch.length) {
+        sel.innerHTML = '<option value="">Tidak ada kanal tersedia</option>';
+        $('channel-msg').textContent = 'Pembayaran otomatis belum aktif. Hubungi kami untuk berlangganan manual.';
+        return;
+      }
+      sel.innerHTML = '<option value="">Pilih metode…</option>' + ch.map(function (c) {
+        return '<option value="' + esc(c.code) + '">' + esc(c.name) + (c.group ? ' — ' + esc(c.group) : '') + '</option>';
+      }).join('');
+      $('channel-msg').textContent = '';
+    }).catch(function () {
+      sel.innerHTML = '<option value="">Gagal memuat kanal</option>';
+      $('channel-msg').textContent = 'Kanal pembayaran tidak bisa dimuat. Coba muat ulang halaman.';
+    });
+  }
+
+  function syncPayBtn() {
+    var btn = $('pay-btn');
+    var ready = paymentEnabled && state.plan && state.method && $('phone').value.trim();
+    btn.disabled = !ready;
+    btn.textContent = ready ? 'Bayar Sekarang' : 'Lengkapi data dulu';
+  }
+
+  $('plan').addEventListener('change', function () { state.plan = this.value; refreshQuote(); });
+  document.querySelectorAll('.dur-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.dur-btn').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      state.months = Number(b.dataset.months) || 1;
+      refreshQuote();
+    });
+  });
+  $('phone').addEventListener('input', syncPayBtn);
+  $('method').addEventListener('change', function () { state.method = this.value; syncPayBtn(); });
+  $('apply-voucher').addEventListener('click', function () {
+    state.voucher = $('voucher').value.trim();
+    $('voucher-msg').textContent = state.voucher ? 'Voucher akan divalidasi saat menghitung harga.' : '';
+    refreshQuote();
+  });
+
+  $('pay-btn').addEventListener('click', function () {
+    var btn = $('pay-btn');
+    btn.disabled = true;
+    btn.textContent = 'Memproses…';
+    showErr('');
+    apiPost('/api/pricing/checkout', {
+      phone: $('phone').value.trim(),
+      plan_slug: state.plan,
+      months: state.months,
+      voucher_code: state.voucher || undefined,
+      method: state.method,
+      name: $('name').value.trim() || undefined,
+    }).then(function (res) {
+      var d = res.data || {};
+      if (d.instruction && d.instruction.pay_url) {
+        window.location.href = d.instruction.pay_url;
+        return;
+      }
+      // Tanpa instruksi (mis. Tripay belum dikonfigurasi): arahkan ke status.
+      window.location.href = '/pembayaran/' + encodeURIComponent(d.merchant_ref || '');
+    }).catch(function (e) {
+      showErr(e.message || 'Checkout gagal.');
+      btn.disabled = false;
+      btn.textContent = 'Bayar Sekarang';
+    });
+  });
+
+  if (!plans.length) {
+    showErr('Belum ada paket berbayar aktif. Hubungi kami untuk berlangganan.');
+    $('pay-btn').textContent = 'Tidak ada paket';
+    return;
+  }
+  if (!paymentEnabled) {
+    $('channel-msg').textContent = 'Pembayaran otomatis belum aktif. Hubungi kami untuk berlangganan manual.';
+  }
+  refreshQuote();
+  loadChannels().then(syncPayBtn);
+  syncPayBtn();
+})();
+</script>
+</body>
+</html>

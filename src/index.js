@@ -41,7 +41,7 @@ import { normalizePhoneNumber, isOwner } from './utils/phone.js';
 import { normalizeTimezone, timezoneLabel } from './utils/datetime.js';
 import { getFooter, setFooter } from './config/appConfig.js';
 import { sendBackup, pruneOldBackups } from './services/backup.js';
-import { checkAndConsumeQuota, canUseBackup, isTierEnabled } from './services/quota.js';
+import { checkAndConsumeQuota, canUseBackup, isLimitEnabled as isTierEnabled } from './services/features.js';
 import { startWebServer } from './web/server.js';
 import { setBotState } from './web/state.js';
 import {
@@ -62,7 +62,7 @@ import {
   previousMonth,
   readCollection,
   setBudget,
-  setUserTier,
+  setUserPlan,
   setUserTimezone,
   setWalletBalance,
   updateUserFields,
@@ -768,15 +768,15 @@ async function handleCommand(prefix, rawText, ctx) {
         return true;
       }
       const targetPhone = normalizePhoneNumber(args[0] || '');
-      const tier = (args[1] || '').toLowerCase();
+      const planSlug = (args[1] || '').toLowerCase();
       const days = Number(args[2]) || 30;
-      if (!targetPhone || !['free', 'basic', 'premium', 'sultan'].includes(tier)) {
-        await reply('❌ Format: `!setlevel <nomor> <free|basic|premium|sultan> [hari]`');
+      if (!targetPhone || !['free', 'starter', 'pro'].includes(planSlug)) {
+        await reply('❌ Format: `!setlevel <nomor> <free|starter|pro> [hari]`');
         return true;
       }
-      const expiredAt = tier === 'free' ? null : new Date(Date.now() + days * 86400000).toISOString();
-      await setUserTier(targetPhone, tier, expiredAt);
-      await reply(`✅ Level ${targetPhone} diubah ke *${tier}*${expiredAt ? ` (expired ${expiredAt.slice(0, 10)})` : ''}.`);
+      const expiredAt = planSlug === 'free' ? null : new Date(Date.now() + days * 86400000).toISOString();
+      await setUserPlan(targetPhone, planSlug, expiredAt);
+      await reply(`✅ Paket ${targetPhone} diubah ke *${planSlug}*${expiredAt ? ` (expired ${expiredAt.slice(0, 10)})` : ''}.`);
       return true;
     }
 
@@ -812,10 +812,10 @@ async function handleCommand(prefix, rawText, ctx) {
       await reply(
         [
           '📊 *KUOTA ANDA*',
-          `Tier: *${u.tier}*${u.tier_expired_at ? ` (expired ${u.tier_expired_at.slice(0, 10)})` : ''}`,
-          `Teks terpakai: ${u.text_quota_used}${u.tier === 'free' ? '/50' : u.tier === 'basic' ? ' (gabungan max 100)' : ''}`,
-          `Media terpakai: ${u.media_quota_used}${u.tier === 'premium' ? '/100 (bulan)' : u.tier === 'basic' ? ' (max 1/hari)' : ''}`,
-          `Limit bot Sultan: ${u.sultan_bot_limit}`,
+          `Paket: *${u.plan_slug}*${u.plan_expires_at ? ` (expired ${u.plan_expires_at.slice(0, 10)})` : ''}`,
+          `Teks terpakai: ${u.text_quota_used}`,
+          `Media terpakai: ${u.media_quota_used}`,
+          `Limit bot: ${u.sultan_bot_limit}`,
           `Instance aktif: ${u.active_bot_instances.length}`,
         ].join('\n'),
       );
@@ -840,7 +840,7 @@ async function handleCommand(prefix, rawText, ctx) {
       for (const u of users) {
         lines.push(`• *${u.name || u.phone}* (${u.phone})`);
         if (tierEnabled) {
-          lines.push(`   Tier: *${u.tier}* | Limit bot: ${u.sultan_bot_limit} | Instance: ${u.active_bot_instances.length}`);
+          lines.push(`   Paket: *${u.plan_slug}* | Limit bot: ${u.sultan_bot_limit} | Instance: ${u.active_bot_instances.length}`);
         }
       }
       lines.push('', `_Total: ${users.length} user_`);
@@ -873,10 +873,10 @@ async function handleCommand(prefix, rawText, ctx) {
       ];
       if (tierEnabled) {
         infoLines.push(
-          `🏷 Tier  : *${u.tier}*${u.tier_expired_at ? ' (expired ' + u.tier_expired_at.slice(0, 10) + ')' : ''}`,
-          `📊 Teks terpakai : ${u.text_quota_used}${u.tier === 'free' ? '/50' : (u.tier === 'basic' ? ' (gabungan max 100)' : '')}`,
-          `🎬 Media terpakai : ${u.media_quota_used}${u.tier === 'premium' ? '/100 (bulan)' : (u.tier === 'basic' ? ' (max 1/hari)' : '')}`,
-          `🤖 Limit bot Sultan : ${u.sultan_bot_limit}`,
+          `🏷 Paket : *${u.plan_slug}*${u.plan_expires_at ? ' (expired ' + u.plan_expires_at.slice(0, 10) + ')' : ''}`,
+          `📊 Teks terpakai : ${u.text_quota_used}`,
+          `🎬 Media terpakai : ${u.media_quota_used}`,
+          `🤖 Limit bot : ${u.sultan_bot_limit}`,
           `🤖 Instance aktif : ${u.active_bot_instances.length}`,
         );
       }

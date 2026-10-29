@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="id" data-bs-theme="light">
+<head>
+  <%- include('partials/head') %>
+  <style>
+    .pay-card { border:none;border-radius:16px; }
+    .btn-ca { background:#22c55e;border:none;color:#fff; }
+    .btn-ca:hover { background:#16a34a;color:#fff; }
+    .sum-row { display:flex;justify-content:space-between;padding:.35rem 0; }
+    .pay-code { font-size:1.5rem;font-weight:700;letter-spacing:2px;word-break:break-all; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="main" style="margin-left:0">
+    <%- include('partials/publicNav') %>
+    <section class="container py-5" style="max-width:640px">
+      <div class="text-center mb-4">
+        <h1 class="fw-bold h3">Status Pembayaran</h1>
+        <p class="text-muted mb-0" id="ref-label"></p>
+      </div>
+
+      <div class="card pay-card shadow-sm">
+        <div class="card-body p-4">
+          <div class="text-center mb-4">
+            <span class="badge bg-secondary fs-6" id="status-badge">Memuat…</span>
+            <h2 class="fw-bold mt-3 mb-0" id="amount">-</h2>
+            <p class="text-muted mb-0" id="plan-line"></p>
+          </div>
+
+          <div id="instruction-box" class="d-none">
+            <hr>
+            <h6 class="fw-bold mb-3">Instruksi Pembayaran</h6>
+            <div class="sum-row"><span>Metode</span><span id="i-method">-</span></div>
+            <div class="sum-row" id="i-code-row"><span>Kode Bayar</span><span class="pay-code" id="i-code">-</span></div>
+            <div class="sum-row" id="i-va-row"><span>Nomor VA</span><span class="pay-code" id="i-va">-</span></div>
+            <div class="text-center mt-3">
+              <a href="#" class="btn btn-ca w-100" id="i-link" target="_blank" rel="noopener">Buka Halaman Pembayaran</a>
+            </div>
+          </div>
+
+          <div id="qr-box" class="text-center d-none mt-3">
+            <img id="qr-img" alt="QR pembayaran" style="max-width:220px">
+          </div>
+
+          <div id="error-box" class="alert alert-danger d-none mt-3" role="alert"></div>
+          <div id="note-box" class="alert alert-warning d-none mt-3" role="alert"></div>
+
+          <hr>
+          <p class="text-muted small mb-3" id="hint">Halaman ini memeriksa status otomatis setiap 5 detik.</p>
+          <button type="button" class="btn btn-outline-success w-100" id="refresh-btn">Cek Status Sekarang</button>
+        </div>
+      </div>
+    </section>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+(function () {
+  var ref = decodeURIComponent(window.location.pathname.split('/').pop() || '');
+  var $ = function (id) { return document.getElementById(id); };
+  var timer = null;
+
+  function fmt(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+
+  var STATUS_META = {
+    UNPAID:  { cls: 'bg-warning text-dark', label: 'Menunggu Pembayaran', final: false },
+    PAID:    { cls: 'bg-success',           label: 'Lunas',                final: true  },
+    EXPIRED: { cls: 'bg-secondary',         label: 'Kedaluwarsa',          final: true  },
+    FAILED:  { cls: 'bg-danger',            label: 'Gagal',                final: true  },
+    REFUND:  { cls: 'bg-info text-dark',    label: 'Dana Dikembalikan',    final: true  },
+  };
+
+  function setStatus(status) {
+    var meta = STATUS_META[status] || { cls: 'bg-secondary', label: status || 'Tidak diketahui', final: false };
+    var b = $('status-badge');
+    b.className = 'badge fs-6 ' + meta.cls;
+    b.textContent = meta.label;
+    return meta.final;
+  }
+
+  function renderInstruction(ins) {
+    var box = $('instruction-box');
+    if (!ins) { box.classList.add('d-none'); $('qr-box').classList.add('d-none'); return; }
+    box.classList.remove('d-none');
+    $('i-method').textContent = ins.name || ins.method || '-';
+
+    if (ins.pay_code) { $('i-code-row').style.display = ''; $('i-code').textContent = ins.pay_code; }
+    else { $('i-code-row').style.display = 'none'; }
+
+    if (ins.pay_code && /VA|va/i.test(ins.method || '')) { $('i-va-row').style.display = ''; $('i-va').textContent = ins.pay_code; }
+    else { $('i-va-row').style.display = 'none'; }
+
+    var link = $('i-link');
+    var url = ins.pay_url || ins.checkout_url || '';
+    if (url) { link.href = url; link.classList.remove('d-none'); } else { link.classList.add('d-none'); }
+
+    var qr = $('qr-box');
+    if (ins.qr_url) { $('qr-img').src = ins.qr_url; qr.classList.remove('d-none'); }
+    else { qr.classList.add('d-none'); }
+  }
+
+  function check() {
+    return apiGet('/api/pricing/status/' + encodeURIComponent(ref)).then(function (res) {
+      var d = res.data || {};
+      $('ref-label').textContent = d.merchant_ref || ref;
+      $('amount').textContent = fmt(d.amount);
+      $('plan-line').textContent = (d.plan_slug || '') + (d.duration_months ? ' · ' + d.duration_months + ' bulan' : '');
+
+      var final = setStatus(d.status);
+      $('error-box').classList.add('d-none');
+      renderInstruction(d.instruction || null);
+
+      if (d.note) { $('note-box').textContent = d.note; $('note-box').classList.remove('d-none'); }
+      else { $('note-box').classList.add('d-none'); }
+
+      if (d.status === 'PAID') {
+        $('hint').textContent = d.activated
+          ? 'Pembayaran berhasil. Paketmu sudah aktif.'
+          : 'Pembayaran sudah tercatat. Paket sedang diaktifkan.';
+      }
+
+      // Berhenti polling begitu status final.
+      if (final && timer) { clearInterval(timer); timer = null; $('hint').textContent = 'Pemeriksaan otomatis dihentikan.'; }
+      return d;
+    }).catch(function (e) {
+      $('error-box').textContent = e.message || 'Gagal memeriksa status.';
+      $('error-box').classList.remove('d-none');
+      setStatus(null);
+    });
+  }
+
+  $('refresh-btn').addEventListener('click', check);
+
+  if (!ref) {
+    $('error-box').textContent = 'Referensi pembayaran tidak ada di URL.';
+    $('error-box').classList.remove('d-none');
+    return;
+  }
+
+  check();
+  timer = setInterval(check, 5000);
+})();
+</script>
+</body>
+</html>

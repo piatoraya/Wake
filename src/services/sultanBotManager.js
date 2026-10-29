@@ -8,7 +8,7 @@ import makeWASocket, {
   Browsers,
 } from '@whiskeysockets/baileys';
 import { getUser, listUsers, withCollection } from '../config/database.js';
-import { canCreateBotInstance } from './quota.js';
+import { canCreateBotInstance } from './features.js';
 import qrcode from 'qrcode-terminal';
 
 const sockets = new Map(); // botId -> { sock, phone, registered }

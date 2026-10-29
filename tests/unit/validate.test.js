@@ -120,9 +120,9 @@ test('botStart menerima body kosong (semua field punya default)', () => {
   assert.equal(run(validateBody(schemas.botStart), {}).nextCalled, true);
 });
 
-test('userUpdate menolak tier tidak dikenal', () => {
-  assert.equal(run(validateBody(schemas.userUpdate), { tier: 'platinum' }).nextCalled, false);
-  assert.equal(run(validateBody(schemas.userUpdate), { tier: 'premium' }).nextCalled, true);
+test('userUpdate menolak paket tidak dikenal', () => {
+  assert.equal(run(validateBody(schemas.userUpdate), { plan_slug: 'platinum' }).nextCalled, false);
+  assert.equal(run(validateBody(schemas.userUpdate), { plan_slug: 'pro' }).nextCalled, true);
 });
 
 test('restoreUpload mewajibkan payload backup', () => {

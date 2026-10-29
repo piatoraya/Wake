@@ -6,6 +6,9 @@
     .price-card { border:none;border-radius:16px; }
     .price-card.popular { border:2px solid #22c55e; }
     .btn-ca { background:#22c55e;border:none;color:#fff; }
+    .btn-ca:hover { background:#16a34a;color:#fff; }
+    .dur-btn.active { background:#22c55e;color:#fff;border-color:#22c55e; }
+    .benefit-list li { padding:.25rem 0; }
   </style>
 </head>
 <body>
@@ -17,61 +20,127 @@
         <h1 class="fw-bold">Pilih Paketmu</h1>
         <p class="text-muted">Mulai gratis, upgrade kapan saja.</p>
       </div>
-      <div class="row g-4 justify-content-center">
-        <div class="col-md-4">
-          <div class="card price-card shadow-sm h-100">
-            <div class="card-body text-center p-4">
-              <h5>Gratis</h5>
-              <h2 class="fw-bold">Rp 0</h2>
-              <p class="text-muted">/bulan</p>
-              <ul class="list-unstyled text-start mt-4">
-                <li>✅ 50 pesan/bulan (Telegram)</li>
-                <li>✅ Catatan teks & voice note</li>
-                <li>✅ Kategori dasar</li>
-                <li>❌ WhatsApp</li>
-              </ul>
-              <a href="https://wa.me/message/MBKOY5MDII6OO1" class="btn btn-outline-success w-100 mt-3">Mulai Gratis</a>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="card price-card popular shadow h-100">
-            <div class="card-body text-center p-4">
-              <span class="badge bg-success mb-2">Populer</span>
-              <h5>Plus</h5>
-              <h2 class="fw-bold">Rp 29.900</h2>
-              <p class="text-muted">/bulan</p>
-              <ul class="list-unstyled text-start mt-4">
-                <li>✅ Kuota WhatsApp</li>
-                <li>✅ Ekspor Excel</li>
-                <li>✅ Foto struk OCR</li>
-                <li>✅ Budget & reminder</li>
-              </ul>
-              <a href="https://wa.me/message/MBKOY5MDII6OO1" class="btn btn-ca w-100 mt-3">Pilih Plus</a>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="card price-card shadow-sm h-100">
-            <div class="card-body text-center p-4">
-              <h5>Pro</h5>
-              <h2 class="fw-bold">Rp 49.000</h2>
-              <p class="text-muted">/bulan</p>
-              <ul class="list-unstyled text-start mt-4">
-                <li>✅ Kuota dobel</li>
-                <li>✅ Semua fitur Plus</li>
-                <li>✅ Prioritas support</li>
-                <li>✅ AI insight proaktif</li>
-              </ul>
-              <a href="https://wa.me/message/MBKOY5MDII6OO1" class="btn btn-outline-success w-100 mt-3">Pilih Pro</a>
-            </div>
-          </div>
+
+      <% if (!paymentEnabled) { %>
+      <div class="alert alert-warning text-center" role="alert">
+        Pembayaran otomatis sedang tidak tersedia. Hubungi kami untuk berlangganan manual.
+      </div>
+      <% } %>
+
+      <div class="text-center mb-4">
+        <div class="btn-group" role="group" aria-label="Pilih durasi">
+          <% durations.forEach(function (m, i) { %>
+          <button type="button" class="btn btn-outline-success dur-btn<%= i === 0 ? ' active' : '' %>"
+                  data-months="<%= m %>"><%= m %> bulan</button>
+          <% }); %>
         </div>
       </div>
+
+      <div class="row g-4 justify-content-center">
+        <!-- Paket gratis: selalu ada, tidak dibeli lewat checkout. -->
+        <div class="col-md-4">
+          <div class="card price-card shadow-sm h-100">
+            <div class="card-body text-center p-4">
+              <h5><%= freePlan.label %></h5>
+              <h2 class="fw-bold">Rp 0</h2>
+              <p class="text-muted">/bulan</p>
+              <ul class="list-unstyled text-start mt-4 benefit-list">
+                <% freePlan.benefits.forEach(function (b) { %>
+                <li>✅ <%= b %></li>
+                <% }); %>
+              </ul>
+              <a href="/login" class="btn btn-outline-success w-100 mt-3">Mulai Gratis</a>
+            </div>
+          </div>
+        </div>
+
+        <% paidPlans.forEach(function (p, idx) { %>
+        <div class="col-md-4">
+          <div class="card price-card<%= idx === 0 ? ' popular' : '' %> shadow<%= idx === 0 ? '' : '-sm' %> h-100">
+            <div class="card-body text-center p-4">
+              <% if (idx === 0) { %><span class="badge bg-success mb-2">Populer</span><% } %>
+              <h5><%= p.label %></h5>
+              <h2 class="fw-bold" data-price-for="<%= p.slug %>">Rp <%= p.monthly_price.toLocaleString('id-ID') %></h2>
+              <p class="text-muted">/bulan</p>
+              <ul class="list-unstyled text-start mt-4 benefit-list">
+                <% p.benefits.forEach(function (b) { %>
+                <li>✅ <%= b %></li>
+                <% }); %>
+              </ul>
+              <button type="button" class="btn <%= idx === 0 ? 'btn-ca' : 'btn-outline-success' %> w-100 mt-3 btn-choose"
+                      data-slug="<%= p.slug %>" data-label="<%= p.label %>">
+                Pilih <%= p.label %>
+              </button>
+            </div>
+          </div>
+        </div>
+        <% }); %>
+      </div>
+
+      <% if (!paidPlans.length) { %>
+      <p class="text-center text-muted mt-4">Belum ada paket berbayar yang aktif.</p>
+      <% } %>
     </section>
     <%- include('partials/footer') %>
   </div>
 </div>
+
+<!-- Ringkasan harga per durasi, dikirim server supaya client tidak menghitung sendiri. -->
+<script id="pricing-data" type="application/json"><%- JSON.stringify({ plans: paidPlans, durations: durations, payment_enabled: paymentEnabled }) %></script>
 <script src="/assets/compiled/js/app.js"></script>
+<script>
+(function () {
+  var payload = JSON.parse(document.getElementById('pricing-data').textContent || '{}');
+  var plans = payload.plans || [];
+  var months = (payload.durations && payload.durations[0]) || 1;
+  var paymentEnabled = payload.payment_enabled !== false;
+
+  function fmt(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+
+  // Perbarui harga yang tampil sesuai durasi terpilih (harga dihitung server).
+  function renderPrices() {
+    plans.forEach(function (p) {
+      var opt = (p.options || []).filter(function (o) { return o.months === months; })[0];
+      if (!opt) return;
+      var node = document.querySelector('[data-price-for="' + p.slug + '"]');
+      if (!node) return;
+      node.textContent = fmt(opt.per_month);
+      var note = node.parentNode.querySelector('.price-note');
+      if (!note) {
+        note = document.createElement('small');
+        note.className = 'price-note d-block text-success';
+        node.parentNode.insertBefore(note, node.nextSibling);
+      }
+      if (opt.savings > 0) {
+        note.textContent = 'Hemat ' + fmt(opt.savings) + ' (' + months + ' bln: ' + fmt(opt.final_amount) + ')';
+      } else {
+        note.textContent = '';
+      }
+    });
+  }
+
+  document.querySelectorAll('.dur-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.dur-btn').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      months = Number(btn.dataset.months) || 1;
+      renderPrices();
+    });
+  });
+
+  document.querySelectorAll('.btn-choose').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!paymentEnabled) {
+        alert('Pembayaran otomatis belum aktif. Hubungi kami untuk berlangganan manual.');
+        return;
+      }
+      var q = 'plan=' + encodeURIComponent(btn.dataset.slug) + '&months=' + encodeURIComponent(months);
+      window.location.href = '/checkout?' + q;
+    });
+  });
+
+  renderPrices();
+})();
+</script>
 </body>
 </html>

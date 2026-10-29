@@ -47,18 +47,19 @@ router.get('/:phone', async (req, res) => {
   }
 });
 
-// edit tier/kuota/bot limit (Owner & Admin)
+// edit paket/kuota/bot limit (Owner & Admin)
 router.put('/:phone', validateBody(schemas.userUpdate), async (req, res) => {
   try {
     const phone = req.params.phone;
     const user = await getUser(phone);
     if (!user) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Pengguna tidak ditemukan' } });
-    const { tier, tier_expired_at, text_quota_used, media_quota_used, sultan_bot_limit, name } = req.body;
-    // admin tidak boleh set tier sultan? biarkan owner; admin bisa edit kuota
-    if (tier && req.user.role !== 'owner' && tier === 'sultan') {
-      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Hanya owner yang bisa set tier Sultan' } });
+    const { plan_slug, plan_expires_at, text_quota_used, media_quota_used, name } = req.body;
+    // Mengubah paket berarti mengubah hak akses berbayar. Hanya owner.
+    // Admin tetap boleh merapikan kuota dan nama.
+    if (plan_slug && req.user.role !== 'owner') {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Hanya owner yang bisa mengubah paket langganan' } });
     }
-    const updated = await updateUserFields(phone, { tier, tier_expired_at, text_quota_used, media_quota_used, sultan_bot_limit, name });
+    const updated = await updateUserFields(phone, { plan_slug, plan_expires_at, text_quota_used, media_quota_used, name });
     await addAuditLog({ adminId: req.user.sub, action: 'update', entity: 'user', entityId: phone, before: user, after: updated, ip: req.ip, userAgent: req.get('user-agent') });
     res.json({ success: true, data: updated });
   } catch (e) {

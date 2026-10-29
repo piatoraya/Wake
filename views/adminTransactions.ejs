@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="id" data-bs-theme="light">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<div id="app">
+  <div id="main">
+    <%- include('partials/sidebar') %>
+    <div id="main-content">
+      <div class="page-heading">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <h3>Transaksi Langganan</h3>
+            <p class="text-muted mb-0">Pembayaran paket, aktivasi manual, dan rekonsiliasi.</p>
+          </div>
+          <div class="d-flex gap-2">
+            <select class="form-select" id="f-status" style="width:auto">
+              <option value="">Semua status</option>
+              <option value="UNPAID">UNPAID</option>
+              <option value="PAID">PAID</option>
+              <option value="EXPIRED">EXPIRED</option>
+              <option value="FAILED">FAILED</option>
+            </select>
+            <button class="btn btn-outline-success" id="sweep-btn">Sapu Kedaluwarsa</button>
+          </div>
+        </div>
+      </div>
+
+      <section class="section">
+        <div id="error-box" class="alert alert-danger d-none" role="alert"></div>
+        <div id="ok-box" class="alert alert-success d-none" role="alert"></div>
+
+        <div class="row g-3 mb-3" id="summary-row"></div>
+
+        <div class="card">
+          <div class="card-body">
+            <div class="table-responsive" id="table-wrap">
+              <p class="text-muted">Memuat transaksi…</p>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <small class="text-muted" id="page-info"></small>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-secondary" id="prev-btn">Sebelumnya</button>
+                <button class="btn btn-sm btn-outline-secondary" id="next-btn">Berikutnya</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var LIMIT = 25;
+  var offset = 0;
+  var total = 0;
+
+  function fmt(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+  function showErr(m) { var b = $('error-box'); if (!m) { b.classList.add('d-none'); return; } b.textContent = m; b.classList.remove('d-none'); }
+  function showOk(m) { var b = $('ok-box'); if (!m) { b.classList.add('d-none'); return; } b.textContent = m; b.classList.remove('d-none'); }
+
+  var STATUS_CLS = {
+    UNPAID: 'bg-warning text-dark', PAID: 'bg-success',
+    EXPIRED: 'bg-secondary', FAILED: 'bg-danger', REFUND: 'bg-info text-dark',
+  };
+
+  function statCard(label, value, cls) {
+    return '<div class="col-6 col-md-3"><div class="card"><div class="card-body">' +
+      '<p class="text-muted mb-1 small">' + esc(label) + '</p>' +
+      '<h5 class="fw-bold mb-0 ' + (cls || '') + '">' + esc(value) + '</h5>' +
+      '</div></div></div>';
+  }
+
+  function load() {
+    var q = '?limit=' + LIMIT + '&offset=' + offset;
+    var st = $('f-status').value;
+    if (st) q += '&status=' + encodeURIComponent(st);
+
+    return apiGet('/api/admin-transactions' + q).then(function (res) {
+      var d = res.data || {};
+      var s = d.summary || {};
+      total = (d.pagination || {}).total || 0;
+
+      $('summary-row').innerHTML =
+        statCard('Lunas', s.paid_count || 0, 'text-success') +
+        statCard('Menunggu', s.unpaid_count || 0, 'text-warning') +
+        statCard('Gagal', s.failed_count || 0, 'text-danger') +
+        statCard('Pendapatan', fmt(s.revenue), 'text-success');
+
+      render(d.payments || []);
+      $('page-info').textContent = total
+        ? 'Menampilkan ' + (offset + 1) + '–' + Math.min(offset + LIMIT, total) + ' dari ' + total
+        : 'Tidak ada data';
+      $('prev-btn').disabled = offset <= 0;
+      $('next-btn').disabled = offset + LIMIT >= total;
+    }).catch(function (e) { showErr(e.message); });
+  }
+
+  function render(list) {
+    var wrap = $('table-wrap');
+    if (!list.length) { wrap.innerHTML = '<p class="text-muted">Belum ada transaksi.</p>'; return; }
+
+    wrap.innerHTML = '<table class="table table-sm align-middle"><thead><tr>' +
+      '<th>Referensi</th><th>Nomor</th><th>Paket</th><th>Nominal</th><th>Status</th><th>Dibuat</th><th></th>' +
+      '</tr></thead><tbody>' + list.map(function (p) {
+        return '<tr>' +
+          '<td><small><code>' + esc(p.merchant_ref) + '</code></small></td>' +
+          '<td><small>' + esc(p.phone || '-') + '</small></td>' +
+          '<td><small>' + esc(p.plan_slug || '-') + (p.duration_months ? ' · ' + esc(p.duration_months) + 'bln' : '') + '</small></td>' +
+          '<td>' + esc(fmt(p.final_amount)) + '</td>' +
+          '<td><span class="badge ' + (STATUS_CLS[p.status] || 'bg-secondary') + '">' + esc(p.status || '-') + '</span></td>' +
+          '<td><small>' + esc(String(p.created_at || '').slice(0, 16).replace('T', ' ')) + '</small></td>' +
+          '<td class="text-nowrap">' +
+            '<button class="btn btn-sm btn-outline-secondary" data-sync="' + esc(p.merchant_ref) + '">Sync</button> ' +
+            (p.status === 'UNPAID'
+              ? '<button class="btn btn-sm btn-success" data-activate="' + esc(p.merchant_ref) + '">Aktifkan</button>'
+              : '') +
+          '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>';
+
+    wrap.querySelectorAll('[data-sync]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        apiPost('/api/admin-transactions/' + encodeURIComponent(b.dataset.sync) + '/sync', {})
+          .then(function () { showOk('Status disinkronkan.'); load(); })
+          .catch(function (e) { showErr(e.message); });
+      });
+    });
+    wrap.querySelectorAll('[data-activate]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (!confirm('Aktifkan paket untuk transaksi ' + b.dataset.activate + '?')) return;
+        apiPost('/api/admin-transactions/' + encodeURIComponent(b.dataset.activate) + '/activate', {})
+          .then(function () { showOk('Paket diaktifkan.'); load(); })
+          .catch(function (e) { showErr(e.message); });
+      });
+    });
+  }
+
+  $('f-status').addEventListener('change', function () { offset = 0; load(); });
+  $('prev-btn').addEventListener('click', function () { offset = Math.max(0, offset - LIMIT); load(); });
+  $('next-btn').addEventListener('click', function () { offset += LIMIT; load(); });
+  $('sweep-btn').addEventListener('click', function () {
+    apiPost('/api/admin-transactions/sweep', {})
+      .then(function (res) {
+        var d = res.data || {};
+        showOk('Sapu selesai. ' + ((d.downgraded || []).length) + ' user diturunkan paketnya.');
+        load();
+      })
+      .catch(function (e) { showErr(e.message); });
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

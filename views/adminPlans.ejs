@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="id" data-bs-theme="light">
+<head>
+  <%- include('partials/head') %>
+</head>
+<body>
+<div id="app">
+  <div id="main">
+    <%- include('partials/sidebar') %>
+    <div id="main-content">
+      <div class="page-heading">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <h3>Paket Langganan</h3>
+            <p class="text-muted mb-0">Harga, diskon durasi, dan fitur tiap paket.</p>
+          </div>
+          <button class="btn btn-success" id="seed-btn">Muat Paket Default</button>
+        </div>
+      </div>
+
+      <section class="section">
+        <div id="error-box" class="alert alert-danger d-none" role="alert"></div>
+        <div id="ok-box" class="alert alert-success d-none" role="alert"></div>
+
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h6 class="fw-bold mb-0">Konfigurasi Pembayaran</h6>
+              <span class="badge bg-secondary" id="pay-badge">Memuat…</span>
+            </div>
+            <div id="pay-problems"></div>
+            <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label">Aktif</label>
+                <select class="form-select" id="pay-enabled">
+                  <option value="false">Nonaktif</option>
+                  <option value="true">Aktif</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Mode</label>
+                <select class="form-select" id="pay-mode">
+                  <option value="sandbox">Sandbox</option>
+                  <option value="production">Production</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Merchant Code</label>
+                <input class="form-control" id="pay-merchant" placeholder="T0001">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Callback URL</label>
+                <input class="form-control" id="pay-callback" placeholder="https://…/api/webhook/tripay">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Private Key</label>
+                <input class="form-control" id="pay-private" placeholder="(kosongkan bila tidak diubah)">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">API Key</label>
+                <input class="form-control" id="pay-apikey" placeholder="(kosongkan bila tidak diubah)">
+              </div>
+              <div class="col-md-4 d-flex align-items-end gap-2">
+                <button class="btn btn-success" id="pay-save">Simpan</button>
+                <button class="btn btn-outline-secondary" id="pay-test">Tes Koneksi</button>
+              </div>
+            </div>
+            <p class="text-muted small mt-2 mb-0">Field rahasia yang dibiarkan kosong tidak menimpa nilai lama.</p>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-body">
+            <h6 class="fw-bold mb-3">Daftar Paket</h6>
+            <div id="plans-wrap" class="table-responsive">
+              <p class="text-muted">Memuat paket…</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <%- include('partials/footer') %>
+  </div>
+</div>
+
+<script src="/assets/compiled/js/app.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var catalog = [];
+  var planSlugs = [];
+
+  function fmt(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+  function showErr(m) { var b = $('error-box'); if (!m) { b.classList.add('d-none'); return; } b.textContent = m; b.classList.remove('d-none'); }
+  function showOk(m) { var b = $('ok-box'); if (!m) { b.classList.add('d-none'); return; } b.textContent = m; b.classList.remove('d-none'); }
+
+  function loadPlans() {
+    return apiGet('/api/admin-plans').then(function (res) {
+      var d = res.data || {};
+      catalog = d.feature_catalog || [];
+      planSlugs = d.plan_slugs || [];
+      renderPlans(d.plans || []);
+    }).catch(function (e) { showErr(e.message); });
+  }
+
+  function featureInput(plan, feat) {
+    var val = (plan.features || {})[feat.key];
+    var id = 'f-' + plan.slug + '-' + feat.key;
+    if (feat.type === 'boolean') {
+      return '<div class="form-check form-switch">' +
+        '<input class="form-check-input" type="checkbox" id="' + id + '" data-plan="' + esc(plan.slug) + '" data-key="' + esc(feat.key) + '" data-type="boolean"' + (val === true ? ' checked' : '') + '>' +
+        '</div>';
+    }
+    return '<input type="number" class="form-control form-control-sm" style="width:90px" id="' + id + '" ' +
+      'data-plan="' + esc(plan.slug) + '" data-key="' + esc(feat.key) + '" data-type="limit" value="' + esc(val === undefined ? '' : val) + '">';
+  }
+
+  function renderPlans(plans) {
+    var wrap = $('plans-wrap');
+    if (!plans.length) { wrap.innerHTML = '<p class="text-muted">Belum ada paket. Klik "Muat Paket Default".</p>'; return; }
+
+    var head = '<tr><th>Paket</th><th>Label</th><th>Harga / bulan</th>' + catalog.map(function (f) { return '<th>' + esc(f.label) + '</th>'; }).join('') + '<th></th></tr>';
+
+    var rows = plans.map(function (p) {
+      var dur = (p.durations || []).map(function (d) {
+        return d.months + 'bln: ' + (d.discount_type === 'fixed' ? fmt(d.discount_value) : (Number(d.discount_value) || 0) + '%');
+      }).join(' · ') || '-';
+      return '<tr>' +
+        '<td><span class="badge bg-secondary">' + esc(p.slug) + '</span></td>' +
+        '<td><input class="form-control form-control-sm" data-field="label" data-plan="' + esc(p.slug) + '" value="' + esc(p.label || '') + '"></td>' +
+        '<td><input type="number" class="form-control form-control-sm" style="width:120px" data-field="monthly_price" data-plan="' + esc(p.slug) + '" value="' + esc(p.monthly_price || 0) + '">' +
+          '<small class="text-muted d-block">' + esc(dur) + '</small></td>' +
+        catalog.map(function (f) { return '<td>' + featureInput(p, f) + '</td>'; }).join('') +
+        '<td class="text-nowrap">' +
+          '<button class="btn btn-sm btn-success" data-save="' + esc(p.slug) + '">Simpan</button> ' +
+          '<button class="btn btn-sm btn-outline-danger" data-reset="' + esc(p.slug) + '">Reset</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    wrap.innerHTML = '<table class="table table-sm align-middle"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>';
+
+    wrap.querySelectorAll('[data-save]').forEach(function (b) {
+      b.addEventListener('click', function () { savePlan(b.dataset.save); });
+    });
+    wrap.querySelectorAll('[data-reset]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (!confirm('Reset paket ' + b.dataset.reset + ' ke nilai default?')) return;
+        apiPost('/api/admin-plans/' + encodeURIComponent(b.dataset.reset) + '/reset', {})
+          .then(function () { showOk('Paket direset.'); loadPlans(); })
+          .catch(function (e) { showErr(e.message); });
+      });
+    });
+  }
+
+  // Fitur dikumpulkan dari input, bukan dihitung ulang di client.
+  function savePlan(slug) {
+    var features = {};
+    document.querySelectorAll('[data-plan="' + slug + '"][data-key]').forEach(function (inp) {
+      if (inp.dataset.type === 'boolean') features[inp.dataset.key] = inp.checked;
+      else features[inp.dataset.key] = inp.value === '' ? null : Number(inp.value);
+    });
+    var body = { features: features };
+    var labelEl = document.querySelector('[data-plan="' + slug + '"][data-field="label"]');
+    var priceEl = document.querySelector('[data-plan="' + slug + '"][data-field="monthly_price"]');
+    if (labelEl) body.label = labelEl.value.trim();
+    if (priceEl) body.monthly_price = Number(priceEl.value) || 0;
+
+    apiPut('/api/admin-plans/' + encodeURIComponent(slug), body)
+      .then(function () { showOk('Paket ' + slug + ' disimpan.'); loadPlans(); })
+      .catch(function (e) { showErr(e.message); });
+  }
+
+  function loadPayment() {
+    return apiGet('/api/admin-plans/payment-config').then(function (res) {
+      var d = res.data || {};
+      $('pay-enabled').value = d.enabled ? 'true' : 'false';
+      $('pay-mode').value = d.mode || 'sandbox';
+      $('pay-merchant').value = d.merchant_code || '';
+      $('pay-callback').value = d.callback_url || '';
+      $('pay-private').value = '';
+      $('pay-apikey').value = '';
+      $('pay-private').placeholder = d.private_key_set ? ('terisi: ' + (d.private_key_masked || '••••')) : '(belum diisi)';
+      $('pay-apikey').placeholder = d.api_key_set ? ('terisi: ' + (d.api_key_masked || '••••')) : '(belum diisi)';
+
+      var badge = $('pay-badge');
+      badge.className = 'badge ' + (d.configured ? 'bg-success' : 'bg-warning text-dark');
+      badge.textContent = d.configured ? 'Siap' : 'Belum lengkap';
+
+      var probs = d.problems || [];
+      $('pay-problems').innerHTML = probs.length
+        ? '<ul class="small text-danger mb-3">' + probs.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>'
+        : '';
+    }).catch(function (e) { showErr(e.message); });
+  }
+
+  $('pay-save').addEventListener('click', function () {
+    var body = {
+      enabled: $('pay-enabled').value === 'true',
+      mode: $('pay-mode').value,
+      merchant_code: $('pay-merchant').value.trim(),
+      callback_url: $('pay-callback').value.trim(),
+    };
+    // Hanya kirim rahasia bila diisi; kosong berarti "jangan ubah".
+    if ($('pay-private').value.trim()) body.private_key = $('pay-private').value.trim();
+    if ($('pay-apikey').value.trim()) body.api_key = $('pay-apikey').value.trim();
+
+    apiPut('/api/admin-plans/payment-config', body)
+      .then(function () { showOk('Konfigurasi pembayaran disimpan.'); loadPayment(); })
+      .catch(function (e) { showErr(e.message); });
+  });
+
+  $('pay-test').addEventListener('click', function () {
+    apiPost('/api/admin-plans/payment-config/test', {})
+      .then(function (res) {
+        var d = res.data || {};
+        showOk('Koneksi OK. ' + (d.channel_count ? d.channel_count + ' kanal tersedia.' : ''));
+      })
+      .catch(function (e) { showErr(e.message); });
+  });
+
+  $('seed-btn').addEventListener('click', function () {
+    if (!confirm('Muat paket default? Paket yang sudah ada tidak akan ditimpa.')) return;
+    apiPost('/api/admin-plans/seed', {})
+      .then(function () { showOk('Paket default dimuat.'); loadPlans(); })
+      .catch(function (e) { showErr(e.message); });
+  });
+
+  loadPlans();
+  loadPayment();
+})();
+</script>
+</body>
+</html>

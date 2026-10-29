@@ -14,6 +14,15 @@
  */
 
 import { z } from 'zod';
+import { PLAN_SLUGS } from '../config/plans.js';
+
+/**
+ * Enum slug paket diambil dari sumber kebenaran tunggal (`plans.js`) supaya
+ * tidak drift saat paket ditambah/diganti. Sebelumnya di-hardcode di sini dan
+ * sempat tidak sinkron ('business' vs 'starter'), sehingga checkout paket
+ * 'starter' selalu ditolak 400 VALIDATION_ERROR.
+ */
+const planSlugField = z.enum(PLAN_SLUGS, { message: 'Paket tidak dikenal' });
 
 /** Nomor telepon Indonesia dalam bentuk apa pun -> dinormalisasi di layer DB. */
 const phoneField = z
@@ -105,11 +114,13 @@ export const schemas = {
   userUpdate: z
     .object({
       name: optionalText(80),
-      tier: z.enum(['free', 'basic', 'premium', 'sultan']).optional(),
-      tier_expired_at: isoDate,
+      // `tier` lama (free/basic/premium/sultan) DIGANTI oleh `plan_slug`.
+      // Field tier sengaja dibuang, bukan dipetakan diam-diam, supaya
+      // permintaan lama gagal jelas alih-alih menulis paket yang salah.
+      plan_slug: planSlugField.optional(),
+      plan_expires_at: isoDate,
       text_quota_used: z.coerce.number().int().min(0).optional(),
       media_quota_used: z.coerce.number().int().min(0).optional(),
-      sultan_bot_limit: z.coerce.number().int().min(0).max(100).optional(),
     })
     .refine((v) => Object.keys(v).length > 0, 'Tidak ada field yang diubah'),
 
@@ -178,6 +189,128 @@ export const schemas = {
       message: 'Payload backup (data/backup) wajib diisi',
       path: ['data'],
     }),
+
+  // --------------------------------------------------------------------
+  //  Langganan & pembayaran
+  // --------------------------------------------------------------------
+
+  /** Hitung harga tanpa membuat transaksi. */
+  pricingQuote: z.object({
+    plan_slug: planSlugField,
+    months: z.coerce
+      .number({ message: 'Durasi harus berupa angka' })
+      .int('Durasi harus bilangan bulat')
+      .min(1, 'Durasi minimal 1 bulan')
+      .max(36, 'Durasi maksimal 36 bulan'),
+    voucher_code: optionalText(40),
+  }),
+
+  /** Buat transaksi baru. Nominal TIDAK diterima dari client. */
+  pricingCheckout: z.object({
+    phone: phoneField,
+    plan_slug: planSlugField,
+    months: z.coerce
+      .number({ message: 'Durasi harus berupa angka' })
+      .int('Durasi harus bilangan bulat')
+      .min(1, 'Durasi minimal 1 bulan')
+      .max(36, 'Durasi maksimal 36 bulan'),
+    voucher_code: optionalText(40),
+    method: optionalText(30),
+    name: optionalText(80),
+  }),
+
+  /** Konfigurasi gateway pembayaran. Rahasia opsional: kosong = jangan ubah. */
+  paymentConfigUpdate: z.object({
+    enabled: boolish.optional(),
+    mode: z.enum(['sandbox', 'production']).optional(),
+    merchant_code: optionalText(40),
+    private_key: optionalText(300),
+    api_key: optionalText(300),
+    callback_url: z
+      .string()
+      .trim()
+      .max(300)
+      .refine((v) => !v || /^https?:\/\//i.test(v), 'URL harus diawali http:// atau https://')
+      .optional(),
+    return_url: z
+      .string()
+      .trim()
+      .max(300)
+      .refine((v) => !v || /^https?:\/\//i.test(v), 'URL harus diawali http:// atau https://')
+      .optional(),
+  }),
+
+  /** Ubah paket langganan. */
+  planUpdate: z.object({
+    label: optionalText(60),
+    monthly_price: amountField.optional(),
+    is_active: boolish.optional(),
+    sort_order: z.coerce.number().int().min(0).max(999).optional(),
+    features: z.record(z.string(), z.unknown()).optional(),
+    durations: z.array(z.coerce.number().int().min(1).max(36)).max(10).optional(),
+    benefits: z.array(z.string().trim().max(120)).max(20).optional(),
+  }),
+
+  /** Buat voucher. */
+  voucherCreate: z.object({
+    code: z
+      .string({ message: 'Kode voucher wajib diisi' })
+      .trim()
+      .min(3, 'Kode minimal 3 karakter')
+      .max(40, 'Kode maksimal 40 karakter')
+      .regex(/^[A-Za-z0-9_-]+$/, 'Kode hanya boleh huruf, angka, tanda hubung, dan garis bawah'),
+    discount_type: z.enum(['percent', 'fixed'], { message: 'Tipe diskon harus percent atau fixed' }),
+    discount_value: amountField,
+    min_amount: amountField.optional(),
+    max_discount: amountField.optional(),
+    quota: z.coerce.number().int().min(1).max(1e9).optional(),
+    max_per_user: z.coerce.number().int().min(1).max(1000).optional(),
+    plan_slug: planSlugField.optional(),
+    is_active: boolish.optional(),
+    starts_at: isoDate,
+    expires_at: isoDate,
+    note: optionalText(200),
+  }),
+
+  /** Ubah voucher. Semua field opsional. */
+  voucherUpdate: z.object({
+    code: z
+      .string()
+      .trim()
+      .min(3, 'Kode minimal 3 karakter')
+      .max(40, 'Kode maksimal 40 karakter')
+      .regex(/^[A-Za-z0-9_-]+$/, 'Kode hanya boleh huruf, angka, tanda hubung, dan garis bawah')
+      .optional(),
+    discount_type: z.enum(['percent', 'fixed']).optional(),
+    discount_value: amountField.optional(),
+    min_amount: amountField.optional(),
+    max_discount: amountField.optional(),
+    quota: z.coerce.number().int().min(1).max(1e9).optional(),
+    max_per_user: z.coerce.number().int().min(1).max(1000).optional(),
+    plan_slug: planSlugField.optional(),
+    is_active: boolish.optional(),
+    starts_at: isoDate,
+    expires_at: isoDate,
+    note: optionalText(200),
+  }),
+
+  /** Aktivasi manual oleh owner (transfer langsung, kompensasi). */
+  paymentActivate: z.object({
+    tripay_reference: optionalText(120),
+    paid_at: isoDate,
+  }),
+
+  /** Ubah status transaksi tanpa memperpanjang masa aktif. */
+  paymentStatusUpdate: z.object({
+    status: z.enum(['UNPAID', 'EXPIRED', 'FAILED'], { message: 'Status tidak dikenal' }),
+  }),
+
+  /** Ubah paket user langsung dari dashboard. */
+  userPlanUpdate: z.object({
+    plan_slug: planSlugField,
+    months: z.coerce.number().int().min(0).max(36).optional(),
+    expires_at: isoDate,
+  }),
 };
 
 /**
